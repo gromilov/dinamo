@@ -43,7 +43,7 @@ const { Content } = await render(post);
 			)}
 		</header>
 
-		<article class="prose prose-invert prose-cyber max-w-none">
+		<article class="cyber-prose max-w-none">
 			<Content />
 		</article>
 
@@ -61,38 +61,3 @@ const { Content } = await render(post);
 	</main>
 </Layout>
 
-<style is:global>
-	/* Стили для Markdown контента */
-	.prose-cyber {
-		--tw-prose-body: rgba(255, 255, 255, 0.7);
-		--tw-prose-headings: #fff;
-		--tw-prose-links: #00f3ff;
-		--tw-prose-bold: #fff;
-		--tw-prose-quotes: #00f3ff;
-		--tw-prose-quote-borders: #00f3ff;
-		--tw-prose-code: #ff00ff;
-	}
-
-	.prose-cyber h1, .prose-cyber h2, .prose-cyber h3 {
-		font-family: 'Outfit', sans-serif;
-		text-transform: uppercase;
-		font-style: italic;
-		font-weight: 900;
-		letter-spacing: -0.05em;
-	}
-
-	.prose-cyber blockquote {
-		background: rgba(var(--color-primary), 0.05);
-		padding: 2rem;
-		border-radius: 1.5rem;
-		border-left: 4px solid #00f3ff !important;
-		font-style: italic;
-	}
-
-	.prose-cyber pre {
-		background: #0a0a0f !important;
-		border: 1px solid rgba(255, 255, 255, 0.05);
-		border-radius: 1.5rem;
-		padding: 1.5rem;
-	}
-</style>
