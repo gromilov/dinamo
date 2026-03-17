@@ -1,12 +1,12 @@
 import { defineCollection, z } from 'astro:content';
+import { glob } from 'astro/loaders';
 
 const blog = defineCollection({
-	type: 'content',
-	// Схема метаданных для постов
+	// Astro 6 Content Layer API: используем loader
+	loader: glob({ pattern: '**/[^_]*.md', base: "src/content/blog" }),
 	schema: z.object({
 		title: z.string(),
 		description: z.string(),
-		// Преобразование строки в объект Date
 		pubDate: z.coerce.date(),
 		updatedDate: z.coerce.date().optional(),
 		heroImage: z.string().optional(),

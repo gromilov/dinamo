@@ -5,8 +5,8 @@ import CyberButton from '../../components/ui/CyberButton.astro';
 
 export async function getStaticPaths() {
 	const posts = await getCollection('blog');
-	return posts.map((post) => ({
-		params: { slug: post.slug },
+	return posts.map((post: any) => ({
+		params: { slug: post.id },
 		props: post,
 	}));
 }
