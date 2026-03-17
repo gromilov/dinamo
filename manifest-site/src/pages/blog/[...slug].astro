@@ -1,0 +1,98 @@
+---
+import { type CollectionEntry, getCollection } from 'astro:content';
+import Layout from '../../layouts/Layout.astro';
+import CyberButton from '../../components/ui/CyberButton.astro';
+
+export async function getStaticPaths() {
+	const posts = await getCollection('blog');
+	return posts.map((post) => ({
+		params: { slug: post.slug },
+		props: post,
+	}));
+}
+type Props = CollectionEntry<'blog'>;
+
+const post = Astro.props;
+const { Content } = await post.render();
+---
+
+<Layout title={`${post.data.title} | Dinamo Blog`}>
+	<main class="min-height-screen p-6 md:p-12 lg:p-24 max-w-4xl mx-auto space-y-12">
+		<header class="space-y-8">
+			<nav>
+				<a href="/blog" class="text-cyber-primary hover:text-white transition-colors text-xs font-mono lowercase">
+					&larr; архив_трансляций
+				</a>
+			</nav>
+
+			<div class="space-y-4">
+				<div class="flex items-center gap-4 text-[10px] uppercase font-black tracking-widest text-cyber-muted">
+					<span class="text-cyber-primary italic">{post.data.pubDate.toLocaleDateString('ru-RU')}</span>
+					<span class="w-1 h-1 bg-white/20 rounded-full"></span>
+					<span>Dinamo_Nexus</span>
+				</div>
+				<h1 class="text-4xl md:text-6xl font-heading font-black uppercase tracking-tighter italic leading-none text-white">
+					{post.data.title}
+				</h1>
+			</div>
+
+			{post.data.heroImage && (
+				<div class="aspect-video rounded-3xl overflow-hidden border border-white/10 group">
+					<img src={post.data.heroImage} alt="" class="w-full h-full object-cover grayscale opacity-50 group-hover:grayscale-0 group-hover:opacity-100 transition-all duration-1000" />
+				</div>
+			)}
+		</header>
+
+		<article class="prose prose-invert prose-cyber max-w-none">
+			<Content />
+		</article>
+
+		<footer class="pt-16 border-t border-white/5 flex flex-col items-center gap-8">
+			<div class="text-center space-y-2">
+				<p class="text-xs uppercase font-black opacity-30 italic">Конец Трансляции</p>
+				<p class="text-[10px] text-cyber-muted max-w-xs mx-auto italic">
+					Вы прочитали фрагмент памяти Nexus. Все данные защищены протоколом «ЩИТ».
+				</p>
+			</div>
+			<a href="/blog">
+				<CyberButton variant="primary" class="w-64">Вернуться_в_Архив</CyberButton>
+			</a>
+		</footer>
+	</main>
+</Layout>
+
+<style is:global>
+	/* Стили для Markdown контента */
+	.prose-cyber {
+		--tw-prose-body: rgba(255, 255, 255, 0.7);
+		--tw-prose-headings: #fff;
+		--tw-prose-links: #00f3ff;
+		--tw-prose-bold: #fff;
+		--tw-prose-quotes: #00f3ff;
+		--tw-prose-quote-borders: #00f3ff;
+		--tw-prose-code: #ff00ff;
+	}
+
+	.prose-cyber h1, .prose-cyber h2, .prose-cyber h3 {
+		font-family: 'Outfit', sans-serif;
+		text-transform: uppercase;
+		font-style: italic;
+		font-weight: 900;
+		letter-spacing: -0.05em;
+	}
+
+	.prose-cyber blockquote {
+		background: rgba(var(--color-primary), 0.05);
+		padding: 2rem;
+		border-radius: 1.5rem;
+		border-left: 4px solid #00f3ff !important;
+		font-style: italic;
+	}
+
+	.prose-cyber pre {
+		background: #0a0a0f !important;
+		border: 1px solid rgba(255, 255, 255, 0.05);
+		border-radius: 1.5rem;
+		padding: 1.5rem;
+	}
+</style>

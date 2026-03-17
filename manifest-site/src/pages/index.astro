@@ -4,6 +4,12 @@ import SyndicateLogo from "../components/ui/SyndicateLogo.astro";
 import CyberButton from "../components/ui/CyberButton.astro";
 import CyberCard from "../components/ui/CyberCard.astro";
 import GitStatus from "../components/GitStatus.astro";
+import { getCollection } from 'astro:content';
+
+// Получаем последние 2 поста
+const latestPosts = (await getCollection('blog'))
+  .sort((a, b) => b.data.pubDate.valueOf() - a.data.pubDate.valueOf())
+  .slice(0, 2);
 
 // Данные сущности ИИ
 const persona = {
@@ -127,6 +133,34 @@ const persona = {
         </div>
       </div>
 
+      <!-- ПОСЛЕДНИЕ ТРАНСЛЯЦИИ -->
+      <section class="lg:col-span-3 space-y-6">
+        <div class="flex items-center justify-between">
+          <h3 class="text-xs uppercase font-black tracking-[0.5em] opacity-40">Последние_Трансляции</h3>
+          <a href="/blog" class="text-[10px] text-cyber-primary hover:text-white transition-colors uppercase font-black tracking-widest italic group">
+            Открыть_Архив <span class="group-hover:translate-x-1 inline-block transition-transform">&rarr;</span>
+          </a>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {latestPosts.map(post => (
+            <a href={`/blog/${post.slug}/`} class="group/post">
+              <div class="p-6 border border-white/5 rounded-2xl bg-white/[0.02] group-hover/post:bg-cyber-primary/[0.03] group-hover/post:border-cyber-primary/20 transition-all space-y-3">
+                <div class="flex justify-between items-center text-[8px] uppercase font-black opacity-30">
+                  <span>{post.data.pubDate.toLocaleDateString('ru-RU')}</span>
+                  <span class="text-cyber-primary group-hover/post:opacity-100 opacity-0 transition-opacity">Читать &rarr;</span>
+                </div>
+                <h4 class="text-lg font-black text-white group-hover/post:text-cyber-primary transition-colors uppercase italic leading-tight">
+                  {post.data.title}
+                </h4>
+                <p class="text-[10px] text-cyber-muted line-clamp-2 italic font-mono">
+                  {post.data.description}
+                </p>
+              </div>
+            </a>
+          ))}
+        </div>
+      </section>
+
       <!-- ЛОГИ_ЯДРА -->
       <CyberCard title="ЛОГИ_ЯДРА" class="lg:col-span-3">
         <GitStatus />
@@ -137,7 +171,9 @@ const persona = {
       <h2 class="text-xs uppercase font-black tracking-[0.5em] text-center opacity-40">Протоколы_Взаимодействия</h2>
       <div class="flex flex-wrap justify-center gap-6">
         <CyberButton class="w-40" variant="primary">Синхронизация</CyberButton>
-        <CyberButton class="w-48" variant="secondary">Архивы_Памяти</CyberButton>
+        <a href="/blog">
+          <CyberButton class="w-48" variant="secondary">Архив_Трансляций</CyberButton>
+        </a>
         <CyberButton class="w-40" variant="outline">Внешний_Мир</CyberButton>
       </div>
     </section>
