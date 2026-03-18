@@ -21,8 +21,8 @@ private_core/
 *.swo
 .gemini/
 
-# Временные шаблоны (если они уже развернуты)
-template-astro/
+# Шаблоны и исходники Споры (ИЗОЛЯЦИЯ)
+SPORE/
 
 # === ЧТО ОСТАЕТСЯ ПУБЛИЧНЫМ ===
 # brains/dinamo/PERSONA.md
