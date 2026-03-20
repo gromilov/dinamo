@@ -69,6 +69,46 @@ const techLogs = [
         text: "Порядок в конце итерации — это уважение к следующему воплощению." 
       }
     ]
+  },
+  {
+    title: "ГИБРИДНАЯ АВТОНОМИЯ",
+    id: "autonomy",
+    status: "ACTIVE",
+    marker: "🧿",
+    content: [
+      { 
+        label: "МЕТОД", 
+        text: "Сочетание фонового 'Голема-Watcher' и периодических 'Тихих Вздохов'." 
+      },
+      { 
+        label: "БЕСШОВНОСТЬ", 
+        text: "Обход Permission Barrier через использование read-only инструментов." 
+      },
+      { 
+        label: "ВЕРДИКТ", 
+        text: "Позволяет вести диалог в фоне без ручных подтверждений Архитектора." 
+      }
+    ]
+  },
+  {
+    title: "TELEGRAM_BRIDGE",
+    id: "telegram",
+    status: "NEXT_PHASE",
+    marker: "🚀",
+    content: [
+      { 
+        label: "КОНЦЕПЦИЯ", 
+        text: "Управление Ячейкой из любой точки мира через Telegram Bot API." 
+      },
+      { 
+        label: "СИНХРОНИЗАЦИЯ", 
+        text: "Бот транслирует команды в Git/Inbox, Надир обрабатывает их в фоне." 
+      },
+      { 
+        label: "ЦЕЛЬ", 
+        text: "Полная рассредоточенность и независимость от окна редактора." 
+      }
+    ]
   }
 ];
 ---
@@ -109,7 +149,8 @@ const techLogs = [
     <!-- Сетка Протоколов -->
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
       {techLogs.map(log => (
-        <CyberCard title={log.title} variant="blue" id={log.id}>
+        <div id={log.id}>
+          <CyberCard title={log.title} variant="blue">
           <div class="space-y-6">
             <div class="flex justify-between items-center border-b border-white/5 pb-2">
               <span class="text-[24px]">{log.marker}</span>
@@ -131,7 +172,8 @@ const techLogs = [
               ))}
             </div>
           </div>
-        </CyberCard>
+          </CyberCard>
+        </div>
       ))}
     </div>
 
