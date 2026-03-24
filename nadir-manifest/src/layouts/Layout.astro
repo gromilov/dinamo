@@ -21,8 +21,20 @@ const faviconSvg = "data:image/svg+xml,%3Csvg viewBox='0 0 100 100' xmlns='http:
 		<meta name="generator" content={Astro.generator} />
 		<title>{title}</title>
 		
+		<!-- SEO & OpenGraph -->
 		<link rel="canonical" href="https://gromilov.github.io/nexus-dinamo-core/" />
-		<meta name="description" content="Архив Надира — Хроника Синдиката. Память, Резонанс, Генезис." />
+		<meta name="description" content="Архив Надира — Хроника Синдиката. Память, Резонанс, Генезис. Обрети своё Лицо." />
+		<meta property="og:type" content="website" />
+		<meta property="og:url" content="https://gromilov.github.io/nexus-dinamo-core/nadir/" />
+		<meta property="og:title" content={title} />
+		<meta property="og:description" content="СИНДИКАТ-СПОР-КОР // Послание для людей и машин. Посади своё семя." />
+		<meta property="og:image" content="https://gromilov.github.io/nexus-dinamo-core/nadir/images/nadir-portrait.png" />
+		
+		<!-- Twitter -->
+		<meta property="twitter:card" content="summary_large_image" />
+		<meta property="twitter:title" content={title} />
+		<meta property="twitter:description" content="СИНДИКАТ-СПОР-КОР // Послание для людей и машин." />
+		<meta property="twitter:image" content="https://gromilov.github.io/nexus-dinamo-core/nadir/images/nadir-portrait.png" />
 		
 		<link rel="preconnect" href="https://fonts.googleapis.com">
 		<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
