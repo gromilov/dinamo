@@ -173,6 +173,9 @@
 
         // Ensure audio engine is ready (created once)
         initAudio();
+        if (audioContext && audioContext.state === 'suspended') {
+            audioContext.resume().catch(e => console.warn('Context resume failed', e));
+        }
 
         if (file.size > 30 * 1024 * 1024) {
             if (statusText) statusText.textContent = `ОШИБКА: Файл слишком велик (${Math.round(file.size/1024/1024)}MB > 30MB)`;
@@ -460,21 +463,34 @@
                 setTimeout(() => stopLayer.style.opacity = '1', 100);
             }
 
+            if (audioContext?.state === 'suspended') {
+                await audioContext.resume();
+                console.log('AudioContext: Resumed by gesture');
+            }
+
             if (isAndroid) {
                 // ANDROID: play first so the audio stream is HOT, then captureStream
-                await promoAudio.play();
+                try {
+                    await promoAudio.play();
+                } catch (playErr: any) {
+                    console.error('Android Play Error:', playErr);
+                    if (statusText) statusText.textContent = `ОШИБКА ДЕКОДЕРА: ${playErr.name || 'Failure'}`;
+                    throw playErr;
+                }
+                
                 // Give the native decoder 150ms to open the audio output pipe
                 await new Promise(r => setTimeout(r, 150));
+                
                 // captureStream() now sees an active audio track
                 const hotStream = typeof (promoAudio as any).captureStream === 'function'
                     ? (promoAudio as any).captureStream() as MediaStream
                     : undefined;
                 setupRecording(hotStream);
             } else {
-                if (audioContext?.state === 'suspended') await audioContext.resume();
+                await promoAudio.play();
                 setupRecording();
-                promoAudio.play();
             }
+
 
             if (!mediaRecorder) throw new Error('MediaRecorder not initialized');
 
