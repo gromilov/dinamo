@@ -258,7 +258,9 @@
             vocals = 15 + Math.sin(time * 5) * 10;
         }
 
+        ctx.save();
         const baseColor = `rgba(${selectedColor},`; 
+
         
         if (isRecording || isDormant) {
             ctx.font = 'normal 400 20px monospace';
