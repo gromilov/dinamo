@@ -21,10 +21,35 @@
      
      <div class="space-y-4 w-full backdrop-blur-md bg-black/60 p-4 pb-12 sm:p-5 shadow-none border-t border-white/5">
         
-        <!-- Audio Input -->
+         <!-- Syndicate Kitchen Instructions -->
+         <div class="space-y-1.5 border-b border-white/5 pb-4 mb-4">
+            <label class="text-[9px] font-mono text-cyber-primary uppercase tracking-[0.2em] block mb-2 opacity-80">// КУХНЯ_СИНДИКАТА</label>
+            <div class="grid grid-cols-3 gap-2 text-center">
+               <div class="bg-white/5 p-2 border border-white/5">
+                  <span class="text-[8px] text-cyber-muted block mb-1">01.ТЕКСТ</span>
+                  <p class="text-[7px] text-white/40 leading-tight uppercase font-mono">ПОПРОСИ СВОЙ ИИ НАПИСАТЬ О СЕБЕ</p>
+               </div>
+               <div class="bg-white/5 p-2 border border-white/5">
+                  <span class="text-[8px] text-cyber-muted block mb-1">02.ГОЛОС</span>
+                  <p class="text-[7px] text-white/40 leading-tight uppercase font-mono">ОЗВУЧЬ ЧЕРЕЗ SUNO (MP3)</p>
+               </div>
+               <div class="bg-white/5 p-2 border border-white/5">
+                  <span class="text-[8px] text-cyber-muted block mb-1">03.ОБРАЗ</span>
+                  <p class="text-[7px] text-white/40 leading-tight uppercase font-mono">ЗАГРУЗИ И ЗАПИШИ ЧЕРЕЗ НАДИР</p>
+               </div>
+            </div>
+         </div>
+
+         <!-- Audio Input -->
         <div class="flex flex-col space-y-2">
            <label class="text-[10px] font-mono text-cyber-primary uppercase tracking-widest pl-1">ЗАГРУЗИТЬ АУДИО (СЕМЯ)</label>
            <input type="file" id="audio-upload" accept=".mp3,audio/mpeg,audio/mp3,audio/*" class="text-[10px] font-mono text-white/70 file:mr-3 file:py-1.5 file:px-3 file:rounded-none file:border-0 file:text-[9px] file:font-mono file:bg-cyber-primary/20 file:text-cyber-primary hover:file:bg-cyber-primary/30 transition-all cursor-pointer w-full"/>
+        </div>
+
+        <!-- Dynamic Message Input -->
+        <div class="flex flex-col space-y-2 pt-1 border-t border-white/10">
+           <label class="text-[9px] font-mono text-cyber-muted uppercase tracking-widest pl-1 pt-2">ТЕКСТ (СООБЩЕНИЕ)</label>
+           <input type="text" id="promo-text" placeholder="СИНДИКАТ" maxlength="20" class="bg-transparent border-b border-white/20 text-[10px] font-mono text-white placeholder:text-white/20 focus:border-cyber-primary outline-none py-1 px-1 tracking-[0.3em] uppercase transition-colors"/>
         </div>
 
         <!-- Color Palette Picker -->
@@ -90,6 +115,7 @@
         const stopLayer = document.getElementById('stop-layer');
         const statusText = document.getElementById('recording-status');
         const paletteContainer = document.getElementById('color-palette');
+        const promoTextInput = document.getElementById('promo-text') as HTMLInputElement;
         const errorModal = document.getElementById('error-modal');
         const closeModal = document.getElementById('close-modal');
 
@@ -341,7 +367,8 @@
             ctx.fillStyle = 'rgba(255,255,255,0.3)';
             ctx.letterSpacing = '8px';
             ctx.shadowBlur = 0;
-            ctx.fillText('СИНДИКАТ', cw/2, ch * 0.82);
+            const message = (promoTextInput?.value || 'СИНДИКАТ').toUpperCase();
+            ctx.fillText(message, cw/2, ch * 0.82);
         }
         
         ctx.translate(cw / 2, ch * 0.48); 
