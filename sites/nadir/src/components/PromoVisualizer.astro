@@ -136,14 +136,14 @@
                 // Unload previous if exists
                 if (howl) howl.unload();
 
-                // Detect format from file type
-                const mimeType = file.type || 'audio/mpeg';
+                // Sniff extension for Howler's hint system
                 const extension = file.name.split('.').pop()?.toLowerCase() || 'mp3';
                 
                 howl = new Howl({
                     src: [url],
-                    format: [extension, 'mp3', 'wav', 'aac'], // More permissive
-                    html5: /Android/i.test(navigator.userAgent), // Use HTML5 for Android for better compatibility
+                    format: [extension, 'mp3', 'mpeg', 'aac'],
+                    html5: /Android/i.test(navigator.userAgent), // Prefer HTML5 on Android for codec stability
+                    preload: true,
                     onload: () => {
                         btnRecord.disabled = false;
                         if(statusText) statusText.textContent = "СЕМЯ ЗАГРУЖЕНО";
@@ -151,27 +151,19 @@
                         if(statusText) statusText.classList.remove('text-cyber-muted');
                     },
                     onloaderror: (id, err) => {
-                        console.error("Howl Load Error:", err);
-                        const msg = "НЕИЗВЕСТНЫЙ ФОРМАТ (ПРОБУЕМ...)";
-                        if(statusText) statusText.textContent = msg;
-                        // Don't alert, just log and allow proceeding
+                        console.warn("Load Warning (Android):", err);
+                        // Still allow recording attempt even if loader is confused
+                        if(statusText) statusText.textContent = "ПРОБУЕМ ФОРМАТ...";
                         btnRecord.disabled = false;
                     },
                     onplayerror: (id, err) => {
-                        console.error("Howl Play Error:", err);
-                        // Fallback attempt: sometimes html5: true works when WebAudio fails
-                        howl?.unload();
-                        howl = new Howl({
-                            src: [url],
-                            format: ['mp3'],
-                            html5: true,
-                            onplayerror: () => alert("БРАУЗЕР БЛОКИРУЕТ ЗВУК")
-                        });
+                        console.error("Play Error:", err);
+                        // One last-ditch fallback attempt
+                        Howler.unload();
+                        howl = new Howl({ src: [url], html5: true });
                         howl.play();
                     },
-                    onend: () => {
-                        if (isRecording) stopRecording();
-                    }
+                    onend: () => { if (isRecording) stopRecording(); }
                 });
             }
         });
@@ -179,13 +171,16 @@
         const initAudio = () => {
             if (!isInitialized) {
                 try {
-                    // Use Howler's internal context
-                    audioContext = Howler.ctx;
+                    // Force 44.1kHz to avoid common hardware/MP3 mismatches on Android
+                    const AudioContextClass = (window as any).AudioContext || (window as any).webkitAudioContext;
+                    audioContext = new AudioContextClass({ sampleRate: 44100 });
+                    
                     analyser = audioContext.createAnalyser();
                     analyser.fftSize = 512;
                     analyser.smoothingTimeConstant = 0.85;
 
-                    // Connect Howler's master gain to our analyser
+                    // Manual loading fallback logic will be used if Howler fails
+                    // But for now, we connect Howler's masterGain to our analyser
                     Howler.masterGain.connect(analyser);
 
                     // Android Heartbeat: Silent Oscillator to keep AudioContext alive
@@ -270,7 +265,7 @@
             ctx.fillStyle = 'rgba(255,255,255,0.3)';
             ctx.letterSpacing = '8px';
             ctx.shadowBlur = 0;
-            ctx.fillText('СИНДИКАТ', cw/2, ch * 0.58);
+            ctx.fillText('СИНДИКАТ', cw/2, ch * 0.72);
         }
         
         // --- DRAW FACE ---
