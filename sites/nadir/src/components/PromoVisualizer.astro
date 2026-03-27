@@ -24,7 +24,7 @@
         <!-- Audio Input -->
         <div class="flex flex-col space-y-2">
            <label class="text-[10px] font-mono text-cyber-primary uppercase tracking-widest pl-1">ЗАГРУЗИТЬ АУДИО (СЕМЯ)</label>
-           <input type="file" id="audio-upload" accept="audio/*" class="text-[10px] font-mono text-white/70 file:mr-3 file:py-1.5 file:px-3 file:rounded-none file:border-0 file:text-[9px] file:font-mono file:bg-cyber-primary/20 file:text-cyber-primary hover:file:bg-cyber-primary/30 transition-all cursor-pointer w-full"/>
+           <input type="file" id="audio-upload" accept=".mp3,audio/mpeg,audio/mp3,audio/*" class="text-[10px] font-mono text-white/70 file:mr-3 file:py-1.5 file:px-3 file:rounded-none file:border-0 file:text-[9px] file:font-mono file:bg-cyber-primary/20 file:text-cyber-primary hover:file:bg-cyber-primary/30 transition-all cursor-pointer w-full"/>
         </div>
 
         <!-- Color Palette Picker -->
@@ -48,33 +48,32 @@
      </div>
   </div>
 
-  <!-- Hidden Audio Element -->
-  <audio id="promo-audio" class="hidden" crossorigin="anonymous"></audio>
+  <!-- Hidden Audio Logic replaced by Howler -->
 </div>
 
-<script>
-  document.addEventListener('DOMContentLoaded', () => {
-    const audioUpload = document.getElementById('audio-upload') as HTMLInputElement;
-    const btnRecord = document.getElementById('btn-record') as HTMLButtonElement;
-    const btnStop = document.getElementById('btn-stop') as HTMLButtonElement;
-    const canvas = document.getElementById('promo-canvas') as HTMLCanvasElement;
-    const audio = document.getElementById('promo-audio') as HTMLAudioElement;
-    
-    const uiLayer = document.getElementById('promo-ui');
-    const stopLayer = document.getElementById('stop-layer');
-    const statusText = document.getElementById('recording-status');
-    const paletteContainer = document.getElementById('color-palette');
+    import { Howl, Howler } from 'howler';
 
-    if (!audioUpload || !btnRecord || !canvas || !audio || !btnStop || !paletteContainer) return;
+    document.addEventListener('DOMContentLoaded', () => {
+        const audioUpload = document.getElementById('audio-upload') as HTMLInputElement;
+        const btnRecord = document.getElementById('btn-record') as HTMLButtonElement;
+        const btnStop = document.getElementById('btn-stop') as HTMLButtonElement;
+        const canvas = document.getElementById('promo-canvas') as HTMLCanvasElement;
+        
+        const uiLayer = document.getElementById('promo-ui');
+        const stopLayer = document.getElementById('stop-layer');
+        const statusText = document.getElementById('recording-status');
+        const paletteContainer = document.getElementById('color-palette');
 
-    // --- State & Context ---
-    let audioContext: AudioContext;
-    let analyser: AnalyserNode;
-    let source: MediaElementAudioSourceNode;
-    let mediaRecorder: MediaRecorder | null = null;
-    let recordedChunks: Blob[] = [];
-    let isInitialized = false;
-    let isRecording = false;
+        if (!audioUpload || !btnRecord || !canvas || !btnStop || !paletteContainer) return;
+
+        // --- State & Context ---
+        let audioContext: AudioContext;
+        let analyser: AnalyserNode;
+        let howl: Howl | null = null;
+        let mediaRecorder: MediaRecorder | null = null;
+        let recordedChunks: Blob[] = [];
+        let isInitialized = false;
+        let isRecording = false;
 
     // 9-Color Palette
     const colors = [
@@ -125,68 +124,77 @@
     };
     setupCanvas();
 
-    // 1. Audio Upload Handler
-    audioUpload.addEventListener('change', (e) => {
-        const target = e.target as HTMLInputElement;
-        const file = target.files?.[0];
-        
-        if (file) {
-            const url = URL.createObjectURL(file);
-            audio.src = url;
-            btnRecord.disabled = false;
-            if(statusText) statusText.textContent = "СЕМЯ ЗАГРУЖЕНО";
-            if(statusText) statusText.classList.add('text-cyber-accent');
-            if(statusText) statusText.classList.remove('text-cyber-muted');
-        }
-    });
-
-    audio.addEventListener('error', () => {
-        const error = audio.error;
-        let msg = "ОШИБКА АУДИО";
-        if (error) {
-            switch (error.code) {
-                case 1: msg = "ЗАГРУЗКА ПРЕРВАНА"; break;
-                case 2: msg = "ОШИБКА СЕТИ"; break;
-                case 3: msg = "ОШИБКА ДЕКОДЕРА"; break;
-                case 4: msg = "ФОРМАТ НЕ ПОДДЕРЖИВАЕТСЯ"; break;
-            }
-        }
-        if(statusText) statusText.textContent = msg;
-        alert(msg);
-    });
-
-    const initAudio = () => {
-        if (!isInitialized) {
-            try {
-                const AudioContextClass = (window as any).AudioContext || (window as any).webkitAudioContext;
-                audioContext = new AudioContextClass();
-                analyser = audioContext.createAnalyser();
-                analyser.fftSize = 512;
-                analyser.smoothingTimeConstant = 0.85;
-
-                source = audioContext.createMediaElementSource(audio);
-                source.connect(analyser);
-                analyser.connect(audioContext.destination);
-
-                // Android Heartbeat: Silent Oscillator to keep AudioContext alive
-                const silentOsc = audioContext.createOscillator();
-                const silentGain = audioContext.createGain();
-                silentGain.gain.value = 0.0001; // nearly silent
-                silentOsc.connect(silentGain);
-                silentGain.connect(audioContext.destination);
-                silentOsc.start();
+        // 1. Audio Upload Handler
+        audioUpload.addEventListener('change', (e) => {
+            const target = e.target as HTMLInputElement;
+            const file = target.files?.[0];
+            
+            if (file) {
+                const url = URL.createObjectURL(file);
                 
-                isInitialized = true;
-            } catch (e) {
-                console.error("Audio Init Error:", e);
-                if(statusText) statusText.textContent = "ОШИБКА ИНИЦИАЛИЗАЦИИ";
-            }
-        }
+                // Unload previous if exists
+                if (howl) howl.unload();
 
-        if (audioContext.state === 'suspended') {
-            audioContext.resume();
-        }
-    };
+                howl = new Howl({
+                    src: [url],
+                    format: ['mp3'], // Hint for blob URLs
+                    html5: false, // Use Web Audio for visualization
+                    onload: () => {
+                        btnRecord.disabled = false;
+                        if(statusText) statusText.textContent = "СЕМЯ ЗАГРУЖЕНО";
+                        if(statusText) statusText.classList.add('text-cyber-accent');
+                        if(statusText) statusText.classList.remove('text-cyber-muted');
+                    },
+                    onloaderror: (id, err) => {
+                        console.error("Howl Load Error:", err);
+                        const msg = "ФОРМАТ НЕ ПОДДЕРЖИВАЕТСЯ";
+                        if(statusText) statusText.textContent = msg;
+                        alert(msg);
+                    },
+                    onplayerror: (id, err) => {
+                        console.error("Howl Play Error:", err);
+                        const msg = "БРАУЗЕР БЛОКИРУЕТ ЗВУК";
+                        if(statusText) statusText.textContent = msg;
+                        alert(msg);
+                    },
+                    onend: () => {
+                        if (isRecording) stopRecording();
+                    }
+                });
+            }
+        });
+
+        const initAudio = () => {
+            if (!isInitialized) {
+                try {
+                    // Use Howler's internal context
+                    audioContext = Howler.ctx;
+                    analyser = audioContext.createAnalyser();
+                    analyser.fftSize = 512;
+                    analyser.smoothingTimeConstant = 0.85;
+
+                    // Connect Howler's master gain to our analyser
+                    Howler.masterGain.connect(analyser);
+
+                    // Android Heartbeat: Silent Oscillator to keep AudioContext alive
+                    const silentOsc = audioContext.createOscillator();
+                    const silentGain = audioContext.createGain();
+                    silentGain.gain.value = 0.0001; // nearly silent
+                    silentOsc.connect(silentGain);
+                    silentGain.connect(audioContext.destination);
+                    silentOsc.start();
+                    
+                    isInitialized = true;
+                } catch (e) {
+                    console.error("Audio Init Error:", e);
+                    if(statusText) statusText.textContent = "ОШИБКА ИНИЦИАЛИЗАЦИИ";
+                }
+            }
+
+            if (Howler.state === 'suspended') {
+                Howler.ctx.resume();
+            }
+        };
 
     // 3. The Visualizer Loop
     let time = 0;
@@ -451,18 +459,11 @@
 
             setupRecording();
             
-            audio.currentTime = 0;
-            // Android requires explicit verification of AudioContext state
-            if (audioContext.state === 'suspended') {
-                await audioContext.resume();
+            if (Howler.state === 'suspended') {
+                await Howler.ctx.resume();
             }
             
-            if (audio.readyState < 2) {
-                if(statusText) statusText.textContent = "ЗАГРУЗКА АУДИО...";
-                await new Promise(r => audio.oncanplay = r);
-            }
-            
-            await audio.play();
+            howl?.play();
             
             if (!mediaRecorder) {
                 throw new Error("MediaRecorder not initialized");
