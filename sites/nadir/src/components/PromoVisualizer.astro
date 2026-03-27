@@ -112,13 +112,16 @@
 
     // Canvas Setup
     const ctx = canvas.getContext('2d');
+    let cw = 1080;
+    let ch = 1920;
+    
     const setupCanvas = () => {
         // High-res for Desktop, Safe-res for Mobile (Android encoders often fail at 1080x1920)
         const isMobile = window.innerWidth < 600 || /Android/i.test(navigator.userAgent);
-        const width = isMobile ? 720 : 1080;
-        const height = isMobile ? 1280 : 1920;
-        canvas.width = width;
-        canvas.height = height;
+        cw = isMobile ? 720 : 1080;
+        ch = isMobile ? 1280 : 1920;
+        canvas.width = cw;
+        canvas.height = ch;
     };
     setupCanvas();
 
@@ -137,27 +140,46 @@
         }
     });
 
+    audio.addEventListener('error', () => {
+        const error = audio.error;
+        let msg = "ОШИБКА АУДИО";
+        if (error) {
+            switch (error.code) {
+                case 1: msg = "ЗАГРУЗКА ПРЕРВАНА"; break;
+                case 2: msg = "ОШИБКА СЕТИ"; break;
+                case 3: msg = "ОШИБКА ДЕКОДЕРА"; break;
+                case 4: msg = "ФОРМАТ НЕ ПОДДЕРЖИВАЕТСЯ"; break;
+            }
+        }
+        if(statusText) statusText.textContent = msg;
+    });
+
     const initAudio = () => {
         if (!isInitialized) {
-            const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
-            audioContext = new AudioContextClass();
-            analyser = audioContext.createAnalyser();
-            analyser.fftSize = 512;
-            analyser.smoothingTimeConstant = 0.85;
+            try {
+                const AudioContextClass = (window as any).AudioContext || (window as any).webkitAudioContext;
+                audioContext = new AudioContextClass();
+                analyser = audioContext.createAnalyser();
+                analyser.fftSize = 512;
+                analyser.smoothingTimeConstant = 0.85;
 
-            source = audioContext.createMediaElementSource(audio);
-            source.connect(analyser);
-            analyser.connect(audioContext.destination);
+                source = audioContext.createMediaElementSource(audio);
+                source.connect(analyser);
+                analyser.connect(audioContext.destination);
 
-            // Android Heartbeat: Silent Oscillator to keep AudioContext alive
-            const silentOsc = audioContext.createOscillator();
-            const silentGain = audioContext.createGain();
-            silentGain.gain.value = 0.0001; // nearly silent
-            silentOsc.connect(silentGain);
-            silentGain.connect(audioContext.destination);
-            silentOsc.start();
-            
-            isInitialized = true;
+                // Android Heartbeat: Silent Oscillator to keep AudioContext alive
+                const silentOsc = audioContext.createOscillator();
+                const silentGain = audioContext.createGain();
+                silentGain.gain.value = 0.0001; // nearly silent
+                silentOsc.connect(silentGain);
+                silentGain.connect(audioContext.destination);
+                silentOsc.start();
+                
+                isInitialized = true;
+            } catch (e) {
+                console.error("Audio Init Error:", e);
+                if(statusText) statusText.textContent = "ОШИБКА ИНИЦИАЛИЗАЦИИ";
+            }
         }
 
         if (audioContext.state === 'suspended') {
@@ -169,8 +191,6 @@
     let time = 0;
     
     // Grid generation (cached for performance)
-    const cw = 1080;
-    const ch = 1920;
     const gridCanvas = document.createElement('canvas');
     gridCanvas.width = cw;
     gridCanvas.height = ch;
@@ -229,14 +249,13 @@
             ctx.fillStyle = 'rgba(255,255,255,0.3)';
             ctx.letterSpacing = '8px';
             ctx.shadowBlur = 0;
-            ctx.fillText('СИНДИКАТ', cw/2, ch - 250);
+            ctx.fillText('СИНДИКАТ', cw/2, ch * 0.58);
         }
         
         // --- DRAW FACE ---
-        ctx.translate(cw / 2, ch * 0.42); 
+        ctx.translate(cw / 2, ch * 0.48); 
         
-        const isMobile = cw < 800;
-        const baseScale = (cw * (isMobile ? 0.62 : 0.8)) / 120; // 0.62 for mobile to avoid clipping
+        const baseScale = (cw * 0.8) / 120; // 80% natural adaptivity (was causing issues due to fixed cw/ch)
         const scale = baseScale + (bass/255) * 0.5; 
         ctx.scale(scale, scale);
         
@@ -437,14 +456,27 @@
                 await audioContext.resume();
             }
             
+            if (audio.readyState < 2) {
+                if(statusText) statusText.textContent = "ЗАГРУЗКА АУДИО...";
+                await new Promise(r => audio.oncanplay = r);
+            }
+            
             await audio.play();
             
-            mediaRecorder?.start(100); 
+            if (!mediaRecorder) {
+                throw new Error("MediaRecorder not initialized");
+            }
+            
+            mediaRecorder.start(100); 
             isRecording = true;
             if(statusText) statusText.textContent = "ИДЕТ ЗАПИСЬ...";
         } catch (error) {
             console.error("Recording Start Error:", error);
-            if(statusText) statusText.textContent = "ОШИБКА: НЕТ ДОСТУПА К ЗВУКУ";
+            let errorMsg = "ОШИБКА ЗАПИСИ";
+            if (error.name === 'NotAllowedError') errorMsg = "БРАУЗЕР БЛОКИРУЕТ ЗВУК";
+            if (error.name === 'SecurityError') errorMsg = "ОШИБКА БЕЗОПАСНОСТИ";
+            
+            if(statusText) statusText.textContent = errorMsg;
             if(uiLayer) {
                 uiLayer.style.opacity = '1';
                 uiLayer.style.pointerEvents = 'auto';
