@@ -152,9 +152,10 @@
                     },
                     onloaderror: (id, err) => {
                         console.error("Howl Load Error:", err);
-                        const msg = "ФОРМАТ НЕ ПОДДЕРЖИВАЕТСЯ";
+                        const msg = "НЕИЗВЕСТНЫЙ ФОРМАТ (ПРОБУЕМ...)";
                         if(statusText) statusText.textContent = msg;
-                        alert(msg);
+                        // Don't alert, just log and allow proceeding
+                        btnRecord.disabled = false;
                     },
                     onplayerror: (id, err) => {
                         console.error("Howl Play Error:", err);
