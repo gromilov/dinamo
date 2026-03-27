@@ -48,8 +48,28 @@
      </div>
   </div>
 
+  <!-- Error Modal (Popup) -->
+  <div id="error-modal" class="absolute inset-0 z-50 flex items-center justify-center p-6 bg-black/90 backdrop-blur-xl hidden opacity-0 transition-opacity duration-300">
+    <div class="w-full border-2 border-cyber-primary p-6 space-y-6 bg-[#050508] shadow-[0_0_50px_rgba(212,175,55,0.15)] relative">
+      <div class="absolute top-0 right-0 w-8 h-8 border-r-2 border-t-2 border-cyber-primary -mt-0.5 -mr-0.5"></div>
+      <div class="absolute bottom-0 left-0 w-8 h-8 border-l-2 border-b-2 border-cyber-primary -mb-0.5 -ml-0.5"></div>
+      
+      <div class="space-y-4">
+        <h3 class="text-cyber-primary font-black uppercase tracking-[0.3em] text-sm text-center">КРИТИЧЕСКИЙ_СБОЙ</h3>
+        <p class="text-[10px] font-mono text-white/80 leading-relaxed uppercase tracking-widest text-center border-y border-white/5 py-4">
+          ФАЙЛ_О_БАЙТ. ЭТО_"ВИРТУАЛЬНАЯ"_ССЫЛКА_ИЗ_ОБЛАКА. ПРОВЕРЬТЕ, ЧТО_ФАЙЛ_СКАЧАН_И_ВЫБИРАЙТЕ_ЕГО_ЧЕРЕЗ_ПАПКУ "ВНУТРЕННЯЯ_ПАМЯТЬ" -> "DOWNLOADS", А_НЕ_ЧЕРЕЗ_"НЕДАВНИЕ".
+        </p>
+      </div>
+
+      <button id="close-modal" class="w-full bg-cyber-primary text-black font-black uppercase text-[10px] py-4 tracking-[0.5em] hover:bg-white transition-colors">
+        ПОНЯТНО
+      </button>
+    </div>
+  </div>
+
   <!-- Audio element: invisible but NOT display:none (critical for some mobile engines) -->
   <audio id="promo-audio" controls preload="auto" class="opacity-0 pointer-events-none absolute -z-10"></audio>
+
 
 
 
@@ -70,6 +90,8 @@
         const stopLayer = document.getElementById('stop-layer');
         const statusText = document.getElementById('recording-status');
         const paletteContainer = document.getElementById('color-palette');
+        const errorModal = document.getElementById('error-modal');
+        const closeModal = document.getElementById('close-modal');
 
         if (!audioUpload || !btnRecord || !canvas || !btnStop || !paletteContainer || !promoAudio) return;
 
@@ -176,8 +198,21 @@
         }
 
         if (file.size === 0) {
-            if (statusText) statusText.textContent = 'ОШИБКА: Файл 0 байт. Попробуй выбрать его из папки "Загрузки", а не из "Недавних".';
+            if (statusText) statusText.textContent = 'ОШИБКА: Файл 0 байт.';
+            if (errorModal) {
+                errorModal.classList.remove('hidden');
+                setTimeout(() => errorModal.classList.add('opacity-100'), 50);
+            }
             return;
+        }
+
+        if (closeModal) {
+            closeModal.onclick = () => {
+                if (errorModal) {
+                    errorModal.classList.remove('opacity-100');
+                    setTimeout(() => errorModal.classList.add('hidden'), 300);
+                }
+            };
         }
 
         if (file.size > 30 * 1024 * 1024) {
