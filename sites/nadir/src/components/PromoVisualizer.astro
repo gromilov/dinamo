@@ -48,8 +48,9 @@
      </div>
   </div>
 
-  <!-- Hidden Audio Logic: Native engine is primary, Howler is backup -->
-  <audio id="promo-audio" class="hidden" crossorigin="anonymous"></audio>
+  <!-- Hidden Audio element — NO crossorigin: blob URLs don't have CORS headers, crossorigin would block captureStream() -->
+  <audio id="promo-audio" class="hidden"></audio>
+
 </div>
 
 <script>
@@ -140,10 +141,12 @@
             analyser.smoothingTimeConstant = 0.85;
 
             if (!isAndroid) {
-                // Desktop: connect audio element through Web Audio for music-reactive face
+                // Desktop: crossorigin needed for createMediaElementSource with data: URIs
+                promoAudio.crossOrigin = 'anonymous';
                 const src = audioContext.createMediaElementSource(promoAudio);
                 src.connect(analyser);
                 analyser.connect(audioContext.destination);
+
             } else {
                 // Android: audio plays directly through native decoder, no Web Audio routing
                 // Analyser is kept for silent heartbeat (not music-reactive on Android)
