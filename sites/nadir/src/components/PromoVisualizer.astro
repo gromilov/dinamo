@@ -152,6 +152,7 @@
             }
         }
         if(statusText) statusText.textContent = msg;
+        alert(msg);
     });
 
     const initAudio = () => {
@@ -473,10 +474,11 @@
         } catch (error) {
             console.error("Recording Start Error:", error);
             let errorMsg = "ОШИБКА ЗАПИСИ";
-            if (error.name === 'NotAllowedError') errorMsg = "БРАУЗЕР БЛОКИРУЕТ ЗВУК";
+            if (error.name === 'NotAllowedError') errorMsg = "БРАУЗЕР БЛОКИРУЕТ ЗВУК (Нажми Разрешить)";
             if (error.name === 'SecurityError') errorMsg = "ОШИБКА БЕЗОПАСНОСТИ";
             
             if(statusText) statusText.textContent = errorMsg;
+            alert(errorMsg);
             if(uiLayer) {
                 uiLayer.style.opacity = '1';
                 uiLayer.style.pointerEvents = 'auto';
