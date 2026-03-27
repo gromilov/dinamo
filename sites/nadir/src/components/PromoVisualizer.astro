@@ -71,9 +71,8 @@
         // --- State & Context ---
         let audioContext: AudioContext;
         let analyser: AnalyserNode;
-        let promoAudio = document.getElementById('promo-audio') as HTMLAudioElement;
-        let audioSource: MediaElementAudioSourceNode;
-        let howl: Howl | null = null;
+        let decodedBuffer: AudioBuffer | null = null;  // Decoded PCM — no MIME issues on Android
+        let activeSource: AudioBufferSourceNode | null = null; // Current playback source
         let mediaRecorder: MediaRecorder | null = null;
         let recordedChunks: Blob[] = [];
         let isInitialized = false;
@@ -130,75 +129,72 @@
     };
     setupCanvas();
 
-        // 1. Audio Upload Handler
-        audioUpload.addEventListener('change', (e) => {
+        // 1. Audio Upload Handler — fetch→decodeAudioData bypasses Android blob MIME issues
+        audioUpload.addEventListener('change', async (e) => {
             const target = e.target as HTMLInputElement;
             const file = target.files?.[0];
-            
-            if (file) {
-                const url = URL.createObjectURL(file);
-                
-                // --- PRIMARY: Native Audio (Nadir Pattern) ---
-                if (promoAudio) {
-                    promoAudio.src = url;
-                    promoAudio.onended = () => { if (isRecording) stopRecording(); };
-                    btnRecord.disabled = false;
-                    if(statusText) statusText.textContent = "СЕМЯ ЗАГРУЖЕНО";
-                    if(statusText) statusText.classList.add('text-cyber-accent');
-                    if(statusText) statusText.classList.remove('text-cyber-muted');
-                }
+            if (!file) return;
 
-                // --- BACKUP: Howler Logic (Inactive for now) ---
-                /* 
-                if (howl) howl.unload();
-                const extension = file.name.split('.').pop()?.toLowerCase() || 'mp3';
-                howl = new Howl({
-                    src: [url],
-                    format: [extension, 'mp3', 'mpeg', 'aac'],
-                    html5: true,
-                    preload: true,
-                    onend: () => { if (isRecording) stopRecording(); }
-                });
-                */
-            }
-        });
+            btnRecord.disabled = true;
+            if(statusText) statusText.textContent = "ДЕКОДИРОВАНИЕ...";
+            if(statusText) statusText.classList.remove('text-cyber-accent');
 
-        const initAudio = () => {
-            if (!isInitialized) {
-                try {
-                    // Force 44.1kHz to avoid common hardware/MP3 mismatches on Android
+            try {
+                // Init AudioContext here — file picker IS a user gesture on all platforms
+                if (!isInitialized) {
                     const AudioContextClass = (window as any).AudioContext || (window as any).webkitAudioContext;
                     audioContext = new AudioContextClass({ sampleRate: 44100 });
-                    
+
                     analyser = audioContext.createAnalyser();
                     analyser.fftSize = 512;
                     analyser.smoothingTimeConstant = 0.85;
-
-                    // --- PRIMARY: Connect Native Audio Source (Nadir Pattern) ---
-                    audioSource = audioContext.createMediaElementSource(promoAudio);
-                    audioSource.connect(analyser);
                     analyser.connect(audioContext.destination);
 
-                    // --- BACKUP: Howler Connection (Inactive) ---
-                    // Howler.masterGain.connect(analyser);
-
-                    // Android Heartbeat: Silent Oscillator to keep AudioContext alive
+                    // Android Heartbeat: keeps AudioContext alive between user gestures
                     const silentOsc = audioContext.createOscillator();
                     const silentGain = audioContext.createGain();
-                    silentGain.gain.value = 0.0001; // nearly silent
+                    silentGain.gain.value = 0.0001;
                     silentOsc.connect(silentGain);
                     silentGain.connect(audioContext.destination);
                     silentOsc.start();
-                    
-                    isInitialized = true;
-                } catch (e) {
-                    console.error("Audio Init Error:", e);
-                    if(statusText) statusText.textContent = "ОШИБКА ИНИЦИАЛИЗАЦИИ";
-                }
-            }
 
+                    isInitialized = true;
+                }
+
+                if (audioContext.state === 'suspended') await audioContext.resume();
+
+                // Stop any previously playing source
+                try { activeSource?.stop(); } catch(e) {}
+                activeSource = null;
+                decodedBuffer = null;
+
+                // Fetch the file as ArrayBuffer — this is format-agnostic on all platforms
+                const url = URL.createObjectURL(file);
+                const response = await fetch(url);
+                const arrayBuffer = await response.arrayBuffer();
+                URL.revokeObjectURL(url);
+
+                // Decode to raw PCM — no MIME confusion, works on Android/iOS/Desktop
+                decodedBuffer = await audioContext.decodeAudioData(arrayBuffer);
+
+                btnRecord.disabled = false;
+                if(statusText) statusText.textContent = "СЕМЯ ДЕКОДИРОВАНО";
+                if(statusText) statusText.classList.add('text-cyber-accent');
+                if(statusText) statusText.classList.remove('text-cyber-muted');
+
+            } catch (err) {
+                console.error("Decode Error:", err);
+                if(statusText) statusText.textContent = "ОШИБКА ДЕКОДИРОВАНИЯ";
+                // Allow attempt anyway in case it's a minor hiccup
+                btnRecord.disabled = false;
+            }
+        });
+
+        // initAudio is now called inline in the upload handler
+        // Kept as a resume helper for edge cases
+        const resumeContext = async () => {
             if (audioContext && audioContext.state === 'suspended') {
-                audioContext.resume();
+                await audioContext.resume();
             }
         };
 
@@ -242,7 +238,8 @@
         let bass = 0;
         let vocals = 0;
 
-        const isDormant = !isInitialized || !promoAudio || promoAudio.paused;
+        const isPlaying = activeSource !== null;
+        const isDormant = !isInitialized || !decodedBuffer || !isPlaying;
 
         if (!isDormant) {
             analyser.getByteFrequencyData(dataArray);
@@ -441,17 +438,24 @@
     // 5. Action Triggers
     const stopRecording = () => {
         if (isRecording && mediaRecorder?.state === 'recording') {
-            promoAudio.pause();
+            try { activeSource?.stop(); } catch(e) {}
+            activeSource = null;
             mediaRecorder.stop();
         }
     };
 
     btnRecord.addEventListener('click', async () => {
-        if (!promoAudio || !promoAudio.src) return;
+        if (!decodedBuffer) return;
         
         try {
-            initAudio(); 
-            
+            await resumeContext();
+
+            // Create a fresh source node every time (nodes are single-use)
+            activeSource = audioContext.createBufferSource();
+            activeSource.buffer = decodedBuffer;
+            activeSource.connect(analyser);
+            activeSource.onended = () => { if (isRecording) stopRecording(); };
+
             // Hide Main UI
             if(uiLayer) uiLayer.style.opacity = '0';
             if(uiLayer) uiLayer.style.pointerEvents = 'none';
@@ -464,18 +468,13 @@
             }
 
             setupRecording();
-            
-            if (audioContext && audioContext.state === 'suspended') {
-                await audioContext.resume();
-            }
-            
-            promoAudio.play();
-            
+
             if (!mediaRecorder) {
                 throw new Error("MediaRecorder not initialized");
             }
-            
-            // SMALL DELAY: Let the native stream "warm up" before capturing (Fix for Android/Hymn issue)
+
+            // Start audio first, then recorder after brief warm-up
+            activeSource.start(0);
             setTimeout(() => {
                 if (mediaRecorder && mediaRecorder.state === 'inactive') {
                     mediaRecorder.start(100); 
@@ -483,6 +482,7 @@
                     if(statusText) statusText.textContent = "ИДЕТ ЗАПИСЬ...";
                 }
             }, 200);
+
         } catch (error) {
             console.error("Recording Start Error:", error);
             let errorMsg = "ОШИБКА ЗАПИСИ";
