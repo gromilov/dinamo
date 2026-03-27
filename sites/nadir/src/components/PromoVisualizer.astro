@@ -177,8 +177,9 @@
         btnRecord.disabled = true;
         if (statusText) { statusText.textContent = 'ЗАГРУЗКА...'; statusText.classList.remove('text-cyber-accent'); }
 
-        // Init Web Audio on first file (user gesture unlocks AudioContext)
-        initAudio();
+        // Init Web Audio on first file (user gesture) — Desktop only
+        // Android: skip AudioContext entirely, native player handles everything
+        if (!isAndroid) initAudio();
 
         const loadAudio = (src: string) => {
             promoAudio.src = src;
@@ -200,14 +201,14 @@
         };
 
         if (isAndroid) {
-            // Android: use blob URL directly — no createMediaElementSource, native decoder handles it
+            // Android: blob URL — native decoder, zero Web Audio interference
             const url = URL.createObjectURL(file);
             loadAudio(url);
         } else {
             // Desktop: FileReader for explicit MIME type in data URI
             const reader = new FileReader();
             reader.onload = () => loadAudio(reader.result as string);
-            reader.onerror = () => { if (statusText) statusText.textContent = 'ОШИБКА ЧТЕНИЯ'; };
+            reader.onerror = () => { if (statusText) statusText.textContent = 'Ошибка чтения'; };
             reader.readAsDataURL(file);
         }
     });
@@ -330,23 +331,26 @@
     drawFrame();
 
     // 4. Recording Setup
-    const setupRecording = () => {
+    // Takes an optional pre-built audioStream (for Android, where we play first then capture)
+    const setupRecording = (audioStream?: MediaStream) => {
         const canvasStream = canvas.captureStream(30); 
         let mixedStream: MediaStream;
 
         try {
             let audioTracks: MediaStreamTrack[] = [];
 
-            // Primary: captureStream() on the audio element
-            // Works reliably on Android Chrome — uses hardware decoder output directly
-            if (typeof (promoAudio as any).captureStream === 'function') {
+            if (audioStream) {
+                // Android: hot stream already built (audio was playing before captureStream call)
+                audioTracks = audioStream.getAudioTracks();
+                console.log('[Capture] Hot captureStream tracks:', audioTracks.length);
+            } else if (!isAndroid && typeof (promoAudio as any).captureStream === 'function') {
                 const capStream = (promoAudio as any).captureStream() as MediaStream;
                 audioTracks = capStream.getAudioTracks();
                 console.log('[Capture] captureStream tracks:', audioTracks.length);
             }
             
-            // Fallback: Web Audio MediaStreamDestination (desktop browsers without captureStream)
-            if (audioTracks.length === 0) {
+            // Desktop fallback: Web Audio MediaStreamDestination
+            if (audioTracks.length === 0 && audioContext) {
                 const audioDest = audioContext.createMediaStreamDestination();
                 analyser.connect(audioDest);
                 audioTracks = audioDest.stream.getAudioTracks();
@@ -420,8 +424,6 @@
         if (!hasLoadedFile) return;
         
         try {
-            if (audioContext?.state === 'suspended') await audioContext.resume();
-
             promoAudio.currentTime = 0;
             promoAudio.onended = () => { if (isRecording) stopRecording(); };
 
@@ -432,11 +434,24 @@
                 setTimeout(() => stopLayer.style.opacity = '1', 100);
             }
 
-            setupRecording();
+            if (isAndroid) {
+                // ANDROID: play first so the audio stream is HOT, then captureStream
+                await promoAudio.play();
+                // Give the native decoder 150ms to open the audio output pipe
+                await new Promise(r => setTimeout(r, 150));
+                // captureStream() now sees an active audio track
+                const hotStream = typeof (promoAudio as any).captureStream === 'function'
+                    ? (promoAudio as any).captureStream() as MediaStream
+                    : undefined;
+                setupRecording(hotStream);
+            } else {
+                if (audioContext?.state === 'suspended') await audioContext.resume();
+                setupRecording();
+                promoAudio.play();
+            }
 
             if (!mediaRecorder) throw new Error('MediaRecorder not initialized');
 
-            promoAudio.play();
             setTimeout(() => {
                 if (mediaRecorder && mediaRecorder.state === 'inactive') {
                     mediaRecorder.start(100); 
