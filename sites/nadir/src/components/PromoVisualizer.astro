@@ -247,7 +247,7 @@
         let bass = 0;
         let vocals = 0;
 
-        const isDormant = !isInitialized || audio.paused;
+        const isDormant = !isInitialized || !howl || !howl.playing();
 
         if (!isDormant) {
             analyser.getByteFrequencyData(dataArray);
@@ -446,13 +446,13 @@
     // 5. Action Triggers
     const stopRecording = () => {
         if (isRecording && mediaRecorder?.state === 'recording') {
-            audio.pause();
+            howl?.stop();
             mediaRecorder.stop();
         }
     };
 
     btnRecord.addEventListener('click', async () => {
-        if (!audio.src) return;
+        if (!howl) return;
         
         try {
             initAudio(); 
