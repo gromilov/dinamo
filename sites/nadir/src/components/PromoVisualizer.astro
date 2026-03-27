@@ -119,6 +119,8 @@
     let ch = 1920;
     
     const setupCanvas = () => {
+        if (isRecording) return; // Prevent resolution shift during recording
+        
         // High-res for Desktop, Safe-res for Mobile (Android encoders often fail at 1080x1920)
         const isMobile = window.innerWidth < 600 || /Android/i.test(navigator.userAgent);
         cw = isMobile ? 720 : 1080;
@@ -371,14 +373,16 @@
         }
 
         // Robust MIME type hunting for cross-platform stability
-        let mimeType = 'video/mp4';
+        // Prioritizing avc3 as per architectural guidance to resolve header consistency issues
+        let mimeType = 'video/mp4;codecs=avc3';
         let extension = 'mp4';
         
         const candidateMimeTypes = [
+            'video/mp4;codecs=avc3',
+            'video/mp4;codecs=avc1',
             'video/mp4',
             'video/webm;codecs=h264',
             'video/webm;codecs=vp9',
-            'video/webm;codecs=vp8',
             'video/webm'
         ];
 
