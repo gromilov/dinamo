@@ -207,18 +207,11 @@
             promoAudio.load();
         };
 
-        if (isAndroid) {
-            // Android: use blob URL with explicit MIME type in <source> tag
-            const url = URL.createObjectURL(file);
-            loadAudio(url, file.type || 'audio/mpeg');
-        } else {
-            // Desktop: FileReader → data URI (MIME is already in the string)
-            const reader = new FileReader();
-            reader.onload = () => loadAudio(reader.result as string, file.type || 'audio/mpeg');
-            reader.onerror = () => { if (statusText) statusText.textContent = 'Ошибка чтения'; };
-            reader.readAsDataURL(file);
-        }
+        // Use blob URL for everything (closer to NadirVoice's server URL behavior)
+        const url = URL.createObjectURL(file);
+        loadAudio(url, file.type || 'audio/mpeg');
     });
+
 
 
 
