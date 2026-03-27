@@ -373,9 +373,8 @@
         }
 
         // Robust MIME type hunting for cross-platform stability
-        // Prioritizing avc3 as per architectural guidance to resolve header consistency issues
-        let mimeType = 'video/mp4;codecs=avc3';
-        let extension = 'mp4';
+        let mimeType = ''; // Initialize as empty to allow browser default if none match
+        let extension = 'webm';
         
         const candidateMimeTypes = [
             'video/mp4;codecs=avc3',
@@ -383,6 +382,7 @@
             'video/mp4',
             'video/webm;codecs=h264',
             'video/webm;codecs=vp9',
+            'video/webm;codecs=vp8',
             'video/webm'
         ];
 
@@ -394,10 +394,12 @@
             }
         }
 
-        mediaRecorder = new MediaRecorder(mixedStream, { 
-            mimeType: mimeType,
+        const recorderOptions: MediaRecorderOptions = { 
             videoBitsPerSecond: 5000000 // 5 Mbps: Safe baseline for mobile hardware encoders
-        });
+        };
+        if (mimeType) recorderOptions.mimeType = mimeType;
+
+        mediaRecorder = new MediaRecorder(mixedStream, recorderOptions);
 
         // Diagnostic feedback for Android stability
         mediaRecorder.onerror = (event) => {
