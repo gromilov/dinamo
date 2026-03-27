@@ -182,15 +182,17 @@
         if (!isAndroid) initAudio();
 
         const loadAudio = (src: string, type: string) => {
-            // Clear previous sources
+            // Clear previous src and sources (essential: src attribute overrides child sources)
+            promoAudio.removeAttribute('src');
             promoAudio.innerHTML = '';
-            // Create source element with explicit MIME type (mimics NadirVoice logic)
+            // Create source element
             const source = document.createElement('source');
             source.src = src;
             source.type = type;
             promoAudio.appendChild(source);
             
-            promoAudio.oncanplaythrough = () => {
+            promoAudio.oncanplay = () => {
+
                 hasLoadedFile = true;
                 btnRecord.disabled = false;
                 if (statusText) {
