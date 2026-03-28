@@ -185,8 +185,8 @@
             
             try {
                 const AC = (window as any).AudioContext || (window as any).webkitAudioContext;
-                // Force 48000Hz (Native Opus rate) for better Android/Telegram compatibility
-                audioContext = new AC({ sampleRate: 48000 });
+                // Let the browser/OS choose the native sampleRate to avoid hardware errors
+                audioContext = new AC();
                 
                 audioContext.onstatechange = () => {
                     console.log(`[AudioContext] State: ${audioContext?.state}`);
@@ -222,7 +222,8 @@
             isRecording = true;
             frameCount = 0;
             
-            if (audioContext?.state === 'suspended') await audioContext.resume();
+            const actualSampleRate = audioContext!.sampleRate;
+            console.log(`[Recorder] Syncing with dynamic Sample Rate: ${actualSampleRate}Hz`);
 
             // 1. Initialize Muxer
             muxer = new Mp4Muxer.Muxer({
@@ -234,10 +235,10 @@
                 audio: {
                     codec: 'aac',
                     numberOfChannels: 2,
-                    sampleRate: 48000
+                    sampleRate: actualSampleRate
                 },
                 fastStart: 'in-memory',
-                firstTimestampBehavior: 'offset' // Critical: fixes "must have timestamp 0" error
+                firstTimestampBehavior: 'offset'
             });
 
             // 2. Initialize Video Encoder (H.264)
@@ -260,7 +261,7 @@
             audioEncoder.configure({
                 codec: 'mp4a.40.2',
                 numberOfChannels: 2,
-                sampleRate: 48000,
+                sampleRate: actualSampleRate,
                 bitrate: 128000
             });
 
@@ -279,7 +280,7 @@
                 try {
                     const audioFrame = new AudioData({
                         format: 'f32-planar',
-                        sampleRate: 48000,
+                        sampleRate: actualSampleRate,
                         numberOfFrames: inputLeft.length,
                         numberOfChannels: 2,
                         timestamp: (audioContext!.currentTime - recordStartTime) * 1000 * 1000,
