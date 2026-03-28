@@ -101,7 +101,7 @@
     import { Buffer } from 'buffer';
     if (typeof window !== 'undefined') { (window as any).Buffer = Buffer; }
     
-    import fixWebmDuration from 'fix-webm-duration';
+    import * as Mp4Muxer from 'mp4-muxer';
 
     document.addEventListener('DOMContentLoaded', () => {
         // ... (UI elements)
@@ -121,18 +121,19 @@
         if (!audioUpload || !btnRecord || !canvas || !btnStop || !paletteContainer || !studioAudio) return;
 
         // --- Shared State ---
-        const isAndroid = /Android/i.test(navigator.userAgent);
         let audioContext: AudioContext | null = null;
         let analyser: AnalyserNode | null = null;
         let audioSource: MediaElementAudioSourceNode | null = null;
-        let audioDestination: MediaStreamAudioDestinationNode | null = null;
         
-        let mediaRecorder: MediaRecorder | null = null;
-        let recordedChunks: Blob[] = [];
         let isRecording = false;
         let hasLoadedFile = false;
+        let muxer: any = null;
+        let videoEncoder: VideoEncoder | null = null;
+        let audioEncoder: AudioEncoder | null = null;
+        let frameCount = 0;
+        let audioProcessingNode: ScriptProcessorNode | null = null;
         let recordStartTime = 0;
-        let selectedMimeType = '';
+        let recordStartTimeAbs = 0;
 
         // --- Palette Setup ---
         const colors = [
@@ -191,18 +192,17 @@
                     console.log(`[AudioContext] State: ${audioContext?.state}`);
                 };
 
-                analyser = audioContext!.createAnalyser();
+                analyser = audioContext.createAnalyser();
                 analyser.fftSize = 512;
                 analyser.smoothingTimeConstant = 0.85;
-                audioDestination = audioContext!.createMediaStreamDestination();
                 
                 // Keep context alive with a silent heartbeat
-                const osc = audioContext!.createOscillator();
-                const gain = audioContext!.createGain();
+                const osc = audioContext.createOscillator();
+                const gain = audioContext.createGain();
                 gain.gain.value = 0.00001;
-                osc.connect(gain); gain.connect(audioContext!.destination);
+                osc.connect(gain); gain.connect(audioContext.destination);
                 osc.start();
-                console.log('[Audio] Engine Ready (44.1kHz)');
+                console.log('[Audio] Engine Ready (48kHz)');
             } catch(e) { console.error('[Audio] Init Failed', e); }
         };
 
@@ -211,73 +211,163 @@
             if (audioContext && !audioSource) {
                 audioSource = audioContext.createMediaElementSource(studioAudio);
                 audioSource.connect(analyser!);
-                audioSource.connect(audioDestination!);
                 analyser!.connect(audioContext.destination);
-                console.log('[Audio] Source routed to Visualizer and Recorder');
+                console.log('[Audio] Source routed to Visualizer and Encoder');
             }
         };
 
-        // --- Recording Session ---
-        const setupRecorder = (androidStream?: MediaStream) => {
-            const canvasStream = canvas.captureStream(30);
-            let audioTracks: MediaStreamTrack[] = [];
+        // --- WebCodecs GOLDEN MP4 Engine ---
+        const startRecording = async () => {
+            if (!hasLoadedFile || isRecording) return;
+            isRecording = true;
+            frameCount = 0;
+            
+            if (audioContext?.state === 'suspended') await audioContext.resume();
 
-            if (audioDestination) {
-                audioTracks = audioDestination.stream.getAudioTracks();
-                console.log('[Recorder] Web Audio tracks:', audioTracks.length);
-            }
-            if (audioTracks.length === 0 && androidStream) {
-                audioTracks = androidStream.getAudioTracks();
-                console.log('[Recorder] Android fallback tracks:', audioTracks.length);
-            }
+            // 1. Initialize Muxer
+            muxer = new Mp4Muxer.Muxer({
+                target: new Mp4Muxer.ArrayBufferTarget(),
+                video: {
+                    codec: 'avc',
+                    width: 720, height: 1280
+                },
+                audio: {
+                    codec: 'aac',
+                    numberOfChannels: 2,
+                    sampleRate: 48000
+                },
+                fastStart: 'in-memory',
+                firstTimestampBehavior: 'offset' // Critical: fixes "must have timestamp 0" error
+            });
 
-            const mixedStream = new MediaStream([...canvasStream.getVideoTracks(), ...audioTracks]);
-            const candidates = ['video/webm;codecs=vp8', 'video/webm', 'video/mp4;codecs=avc1', 'video/mp4'];
-            let mime = 'video/webm';
-            for (const c of candidates) { if (MediaRecorder.isTypeSupported(c)) { mime = c; break; } }
-            selectedMimeType = mime;
+            // 2. Initialize Video Encoder (H.264)
+            videoEncoder = new VideoEncoder({
+                output: (chunk, metadata) => muxer.addVideoChunk(chunk, metadata),
+                error: (e) => { console.error('[VideoEncoder] Error:', e); stopRecording(); }
+            });
+            videoEncoder.configure({
+                codec: 'avc1.42E028', // Level 4.0 supports 1080p/720p 9:16 properly
+                width: 720, height: 1280,
+                bitrate: 3000000,
+                framerate: 30
+            });
 
-            // Force stable bitrate (2.5 Mbps) and continuous stream for Telegram compatibility
-            const recorderOptions: any = { 
-                mimeType: mime, 
-                videoBitsPerSecond: 2500000 
-            };
+            // 3. Initialize Audio Encoder (AAC)
+            audioEncoder = new AudioEncoder({
+                output: (chunk, metadata) => muxer.addAudioChunk(chunk, metadata),
+                error: (e) => { console.error('[AudioEncoder] Error:', e); stopRecording(); }
+            });
+            audioEncoder.configure({
+                codec: 'mp4a.40.2',
+                numberOfChannels: 2,
+                sampleRate: 48000,
+                bitrate: 128000
+            });
 
-            mediaRecorder = new MediaRecorder(mixedStream, recorderOptions);
-
-            mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) recordedChunks.push(e.data); };
-            mediaRecorder.onstop = async () => {
-                if (recordedChunks.length === 0) return;
-                const finalDuration = performance.now() - recordStartTime;
-                
-                let blob = new Blob(recordedChunks, { type: selectedMimeType });
-                recordedChunks = [];
-                
-                // Light Patch: fix-webm-duration is safer for Telegram seeking
-                if (selectedMimeType.includes('webm')) {
-                    blob = await new Promise((resolve) => {
-                        fixWebmDuration(blob, finalDuration, (outBlob) => resolve(outBlob));
-                    });
+            // 4. Audio Capture (using ScriptProcessor)
+            audioProcessingNode = audioContext!.createScriptProcessor(4096, 2, 2);
+            audioProcessingNode.onaudioprocess = (e) => {
+                if (!isRecording) return;
+                const inputLeft = e.inputBuffer.getChannelData(0);
+                const inputRight = e.inputBuffer.getChannelData(1);
+                const data = new Float32Array(inputLeft.length * 2);
+                for (let i = 0; i < inputLeft.length; i++) {
+                    data[i * 2] = inputLeft[i];
+                    data[i * 2 + 1] = inputRight[i];
                 }
-                
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `SYNDICATE_STUDIO_${Date.now()}.${selectedMimeType.includes('mp4') ? 'mp4' : 'webm'}`;
-                a.click();
-                
-                if(uiLayer) { uiLayer.style.opacity = '1'; uiLayer.style.pointerEvents = 'auto'; }
-                if(stopLayer) { stopLayer.classList.add('hidden'); stopLayer.style.opacity = '0'; }
-                if(statusText) statusText.textContent = 'ГОТОВО';
-                isRecording = false;
+
+                try {
+                    const audioFrame = new AudioData({
+                        format: 'f32-planar',
+                        sampleRate: 48000,
+                        numberOfFrames: inputLeft.length,
+                        numberOfChannels: 2,
+                        timestamp: (audioContext!.currentTime - recordStartTime) * 1000 * 1000,
+                        data: data
+                    });
+                    if (audioEncoder?.state === 'configured') audioEncoder.encode(audioFrame);
+                    audioFrame.close();
+                } catch(err) { console.warn('[AudioCapture] Frame failed', err); }
             };
+            
+            analyser?.connect(audioProcessingNode);
+            audioProcessingNode.connect(audioContext!.destination);
+
+            recordStartTimeAbs = performance.now();
+            recordStartTime = audioContext!.currentTime;
+
+            const captureFrame = async () => {
+                if (!isRecording) return;
+                const now = performance.now();
+                const timestamp = (now - recordStartTimeAbs) * 1000;
+                
+                try {
+                    const frame = new VideoFrame(canvas, { timestamp });
+                    const keyframe = frameCount % 60 === 0;
+                    if (videoEncoder?.state === 'configured') {
+                        videoEncoder.encode(frame, { keyFrame: keyframe });
+                    }
+                    frame.close();
+                } catch(err) { console.warn('[VideoCapture] Frame failed', err); }
+                
+                frameCount++;
+                requestAnimationFrame(captureFrame);
+            };
+
+            if(uiLayer) { uiLayer.style.opacity = '0'; uiLayer.style.pointerEvents = 'none'; }
+            if(stopLayer) { stopLayer.classList.remove('hidden'); setTimeout(() => stopLayer.style.opacity = '1', 50); }
+            if(statusText) statusText.textContent = 'ЗАПИСЬ...';
+
+            studioAudio.currentTime = 0;
+            studioAudio.onended = stopRecording;
+            try { await studioAudio.play(); } catch(e) { console.warn('[Audio] Play interrupted or failed', e); }
+            requestAnimationFrame(captureFrame);
         };
 
-        const executeStop = () => {
-            if (isRecording && mediaRecorder?.state === 'recording') {
-                studioAudio.pause();
-                mediaRecorder.stop();
+        const stopRecording = async () => {
+            if (!isRecording) return;
+            isRecording = false;
+            
+            try { studioAudio.pause(); } catch(e) {}
+            
+            if (audioProcessingNode) {
+                analyser?.disconnect(audioProcessingNode);
+                audioProcessingNode.disconnect();
+                audioProcessingNode = null;
             }
+
+            if (videoEncoder) {
+                if (videoEncoder.state !== 'closed') {
+                    try { await videoEncoder.flush(); } catch(e) {}
+                    videoEncoder.close();
+                }
+                videoEncoder = null;
+            }
+            if (audioEncoder) {
+                if (audioEncoder.state !== 'closed') {
+                    try { await audioEncoder.flush(); } catch(e) {}
+                    audioEncoder.close();
+                }
+                audioEncoder = null;
+            }
+
+            if (muxer && frameCount > 0) {
+                try {
+                    muxer.finalize();
+                    const { buffer } = muxer.target;
+                    const blob = new Blob([buffer], { type: 'video/mp4' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `SYNDICATE_STUDIO_${Date.now()}.mp4`;
+                    a.click();
+                } catch(err) { console.error('[Muxer] Finalize failed', err); }
+                muxer = null;
+            }
+
+            if(uiLayer) { uiLayer.style.opacity = '1'; uiLayer.style.pointerEvents = 'auto'; }
+            if(stopLayer) { stopLayer.classList.add('hidden'); stopLayer.style.opacity = '0'; }
+            if(statusText) statusText.textContent = 'ГОТОВО';
         };
 
         // --- Listeners ---
@@ -303,37 +393,8 @@
             studioAudio.onerror = () => showErrorModal();
         });
 
-        btnRecord.addEventListener('click', async () => {
-            if (!hasLoadedFile) return;
-            try {
-                if (audioContext?.state === 'suspended') await audioContext.resume();
-                studioAudio.currentTime = 0;
-                
-                // Set auto-stop when track ends
-                studioAudio.onended = () => {
-                    if (isRecording) executeStop();
-                };
-
-                await studioAudio.play();
-                
-                if (isAndroid) await new Promise(r => setTimeout(r, 150));
-                
-                setupRecorder();
-                if (!mediaRecorder) return;
-
-                if(uiLayer) { uiLayer.style.opacity = '0'; uiLayer.style.pointerEvents = 'none'; }
-                if(stopLayer) { stopLayer.classList.remove('hidden'); setTimeout(() => stopLayer.style.opacity = '1', 50); }
-                
-                recordedChunks = [];
-                recordStartTime = performance.now();
-                // 1000ms clusters create a more standard file structure for seeking
-                mediaRecorder.start(1000);
-                isRecording = true;
-                if(statusText) statusText.textContent = 'ЗАПИСЬ...';
-            } catch (err) { console.error('Record Start Fail:', err); }
-        });
-
-        btnStop.addEventListener('click', executeStop);
+        btnRecord.addEventListener('click', startRecording);
+        btnStop.addEventListener('click', stopRecording);
         if (closeModal) closeModal.onclick = () => hideErrorModal();
 
         // --- Draw Loop ---
