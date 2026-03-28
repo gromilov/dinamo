@@ -148,6 +148,20 @@
         ];
         let selectedColor = colors[0].value;
 
+        const showErrorModal = () => {
+            if (!errorModal) return;
+            errorModal.classList.remove('hidden');
+            // Force reflow
+            errorModal.offsetHeight;
+            errorModal.style.opacity = '1';
+        };
+
+        const hideErrorModal = () => {
+            if (!errorModal) return;
+            errorModal.style.opacity = '0';
+            setTimeout(() => errorModal.classList.add('hidden'), 300);
+        };
+
         colors.forEach((c, i) => {
             const btn = document.createElement('button');
             btn.className = `w-5 h-5 rounded-none border transition-transform hover:scale-125 focus:outline-none ${i === 0 ? 'border-white scale-110' : 'border-black'}`;
@@ -214,9 +228,22 @@
                 elms.forEach(e => reader.read(e));
                 reader.stop();
                 
-                // Explicitly measured duration (ms) instead of guessing
+                // EBML Header Patch: Tools.makeMetadataSeekable produces a clean header with Cues
                 const refinedMetadataBuf = tools.makeMetadataSeekable(reader.metadatas, durationMs, reader.cues);
-                return new Blob([refinedMetadataBuf, buffer.slice(reader.metadataSize)], { type: blob.type });
+                
+                // Robust Splicing: Find the actual start of the first Cluster (0x1F43B675)
+                // Browsers sometimes add extra tags that reader.metadataSize misses.
+                const view = new DataView(buffer);
+                let clusterOffset = -1;
+                for (let i = 0; i < buffer.byteLength - 4; i++) {
+                    if (view.getUint32(i) === 0x1F43B675) {
+                        clusterOffset = i;
+                        break;
+                    }
+                }
+                
+                const finalOffset = clusterOffset !== -1 ? clusterOffset : reader.metadataSize;
+                return new Blob([refinedMetadataBuf, buffer.slice(finalOffset)], { type: blob.type });
             } catch(e) { console.error('[EBML] Fix failed', e); return blob; }
         };
 
@@ -290,7 +317,7 @@
 
             // Trigger error modal for potential 0-byte or corrupted files
             if (file.size === 0) {
-                if (errorModal) errorModal.classList.remove('hidden');
+                showErrorModal();
                 return;
             }
 
@@ -303,7 +330,7 @@
                 if (statusText) statusText.textContent = 'СЕМЯ ЗАГРУЖЕНО';
                 connectAudioSource();
             };
-            studioAudio.onerror = () => errorModal?.classList.remove('hidden');
+            studioAudio.onerror = () => showErrorModal();
         });
 
         btnRecord.addEventListener('click', async () => {
@@ -337,7 +364,7 @@
         });
 
         btnStop.addEventListener('click', executeStop);
-        if (closeModal) closeModal.onclick = () => errorModal?.classList.add('hidden');
+        if (closeModal) closeModal.onclick = () => hideErrorModal();
 
         // --- Draw Loop ---
         const ctx = canvas.getContext('2d');
