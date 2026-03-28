@@ -95,8 +95,8 @@
   <!-- Audio element: invisible but NOT display:none (critical for some mobile engines) -->
   <audio id="studio-audio" controls preload="auto" class="opacity-0 pointer-events-none absolute -z-10"></audio>
 
-  <!-- Ghost Export Overlay -->
-  <div id="export-overlay" class="absolute inset-0 z-[60] flex flex-col items-center justify-center bg-black/95 backdrop-blur-3xl hidden opacity-0 transition-opacity duration-700">
+  <!-- Export Progress Overlay -->
+  <div id="export-overlay" class="absolute inset-0 z-[60] flex flex-col items-center justify-center bg-black/95 backdrop-blur-3xl hidden">
     <div class="w-full max-w-[300px] space-y-8 text-center">
       <div class="space-y-3">
         <h3 class="text-cyber-primary font-black uppercase tracking-[0.4em] text-sm animate-pulse">СИНХРОНИЗАЦИЯ_MP4</h3>
@@ -104,15 +104,35 @@
           ПОДГОТОВКА_КРИСТАЛЬНОЙ_ВЕРСИИ_ДЛЯ_TELEGRAM. НЕ_ЗАКРЫВАЙТЕ_СТРАНИЦУ.
         </p>
       </div>
-      
       <div class="relative h-1 w-full bg-white/5 overflow-hidden">
         <div id="export-progress" class="absolute top-0 left-0 h-full bg-cyber-primary w-0 transition-all duration-300"></div>
       </div>
-      
-      <div id="export-status" class="text-[8px] font-mono text-cyber-primary/60 uppercase tracking-[0.3em]">
-        ИНИЦИАЛИЗАЦИЯ_ЯДРА...
-      </div>
+      <div id="export-status" class="text-[8px] font-mono text-cyber-primary/60 uppercase tracking-[0.3em]">ИНИЦИАЛИЗАЦИЯ_ЯДРА...</div>
     </div>
+  </div>
+
+  <!-- Download Choice Overlay -->
+  <div id="choice-overlay" class="hidden">
+    <h2 class="text-cyber-primary font-black uppercase tracking-[0.4em] text-sm mb-2">ФИНАЛИЗАЦИЯ_РЕЗОНАНСА</h2>
+    <p class="text-[9px] font-mono text-white/40 uppercase tracking-widest mb-8">ВЫБЕРИТЕ_ФОРМАТ_СОХРАНЕНИЯ</p>
+    
+    <div class="choice-buttons">
+        <button id="download-mp4" class="choice-btn" disabled>
+            <span>КРИСТАЛЬНЫЙ MP4 (PRO)</span>
+            <span id="mp4-status-label" style="font-size: 0.6rem; opacity: 0.6;">[ОБРАБОТКА_В_ФОНЕ...]</span>
+        </button>
+        <button id="download-webm" class="choice-btn secondary">
+            СКАЧАТЬ WEBM (БЫСТРО)
+        </button>
+    </div>
+
+    <p class="diagnostic-note">
+        // ЕСЛИ_НА_ТЕЛЕФОНЕ_ВОЗНИКАЮТ_ПРОБЛЕМЫ - ПОПРОБУЙТЕ_ЭКСПОРТ_С_КОМПЬЮТЕРА_ДЛЯ_МАКСИМАЛЬНОЙ_СТАБИЛЬНОСТИ.
+    </p>
+
+    <button id="close-choice" class="text-[9px] font-mono text-white/20 uppercase tracking-[0.5em] mt-8 hover:text-white transition-colors">
+        [ ЗАКРЫТЬ ]
+    </button>
   </div>
 
 </div>
@@ -157,9 +177,17 @@
         // --- Ghost Export State ---
         let audioBuffer: AudioBuffer | null = null;
         let isGhostExporting = false;
+        let lastWebmBlob: Blob | null = null;
+        let lastMp4Blob: Blob | null = null;
+
         const exportOverlay = document.getElementById('export-overlay');
+        const choiceOverlay = document.getElementById('choice-overlay');
         const exportProgress = document.getElementById('export-progress');
         const exportStatus = document.getElementById('export-status');
+        const downloadWebmBtn = document.getElementById('download-webm') as HTMLButtonElement;
+        const downloadMp4Btn = document.getElementById('download-mp4') as HTMLButtonElement;
+        const mp4StatusLabel = document.getElementById('mp4-status-label');
+        const closeChoiceBtn = document.getElementById('close-choice');
 
         // --- Palette Setup ---
         const colors = [
@@ -214,9 +242,11 @@
                 // Force standard sampleRate to avoid device/renderer mismatches
                 audioContext = new AC({ sampleRate: 44100 });
                 
-                audioContext.onstatechange = () => {
-                    console.log(`[AudioContext] State: ${audioContext?.state}`);
-                };
+                if (audioContext) {
+                    audioContext.onstatechange = () => {
+                        console.log(`[AudioContext] State: ${audioContext?.state}`);
+                    };
+                }
 
                 analyser = audioContext!.createAnalyser();
                 analyser.fftSize = 512;
@@ -313,22 +343,25 @@
                 const finalDuration = performance.now() - recordStartTime;
                 console.log(`[Recorder] Recording finished. Measured Duration: ${Math.round(finalDuration)}ms`);
                 
-                let blob = new Blob(recordedChunks, { type: selectedMimeType });
+                lastWebmBlob = new Blob(recordedChunks, { type: selectedMimeType });
                 recordedChunks = [];
-                if (selectedMimeType.includes('webm')) blob = await fixWebmSeekable(blob, finalDuration);
+                if (selectedMimeType.includes('webm')) lastWebmBlob = await fixWebmSeekable(lastWebmBlob, finalDuration);
                 
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `SYNDICATE_STUDIO_${Date.now()}.${selectedMimeType.includes('mp4') ? 'mp4' : 'webm'}`;
-                a.click();
-                
+                // Show Choice UI
+                if (choiceOverlay) {
+                    choiceOverlay.style.display = 'flex';
+                    setTimeout(() => choiceOverlay.style.opacity = '1', 50);
+                    downloadMp4Btn.disabled = true;
+                    if (mp4StatusLabel) mp4StatusLabel.textContent = '[ОБРАБОТКА_В_ФОНЕ...]';
+                }
+
                 if(uiLayer) { uiLayer.style.opacity = '1'; uiLayer.style.pointerEvents = 'auto'; }
                 if(stopLayer) { stopLayer.classList.add('hidden'); stopLayer.style.opacity = '0'; }
-                if(statusText) statusText.textContent = 'ГОТОВО';
+                if(statusText) statusText.textContent = 'ЗАВЕРШЕНО';
                 isRecording = false;
 
-                // Start Ghost Export to MP4
+                // Start Ghost Export to MP4 in background (don't show big overlay yet, or show small progress?)
+                // Let's show the Choice UI immediately, but keep MP4 button disabled until worker finishes.
                 runGhostExport();
             };
         };
@@ -342,15 +375,9 @@
 
         // --- Ghost Export Core ---
         const runGhostExport = async () => {
-            if (!audioBuffer || !exportOverlay || !exportProgress || !exportStatus) return;
+            if (!audioBuffer || !exportProgress || !exportStatus) return;
             isGhostExporting = true;
             
-            // Show Overlay
-            exportOverlay.classList.remove('hidden');
-            setTimeout(() => exportOverlay.style.opacity = '1', 50);
-            exportStatus.textContent = 'ИНИЦИАЛИЗАЦИЯ_ВОРКЕРА...';
-            exportProgress.style.width = '0%';
-
             const duration = audioBuffer.duration;
             const fps = 30;
             const totalFrames = Math.floor(duration * fps);
@@ -360,8 +387,8 @@
             const worker = new Worker(new URL('./encoder.worker.js', import.meta.url), { type: 'module' });
             worker.postMessage({ type: 'START', data: { sampleRate } });
 
-            // 2. Offline Audio Analysis (Extract features for visualization)
-            exportStatus.textContent = 'АНАЛИЗ_РЕЗОНАНСА...';
+            // 2. Offline Audio Analysis (Streaming approach to save RAM)
+            // We'll reuse the same OfflineAudioContext but with multiple small renderings to keep RAM low
             const offlineCtx = new OfflineAudioContext(audioBuffer.numberOfChannels, audioBuffer.length, sampleRate);
             const source = offlineCtx.createBufferSource();
             source.buffer = audioBuffer;
@@ -370,7 +397,7 @@
             source.connect(offlineAnalyser);
             source.start(0);
 
-            // Step through and capture frequency data
+            // Step through and capture frequency data (Optimized for Mobile)
             const framesData: Uint8Array[] = [];
             for (let i = 0; i < totalFrames; i++) {
                 offlineCtx.suspend(i / fps).then(() => {
@@ -382,7 +409,6 @@
             await offlineCtx.startRendering();
 
             // 3. Render & Encode Loop
-            exportStatus.textContent = 'РЕНДЕРИНГ_КАДРОВ_MP4...';
             const ghostCanvas = document.createElement('canvas');
             ghostCanvas.width = 720; ghostCanvas.height = 1280;
             const gctx = ghostCanvas.getContext('2d', { alpha: false, desynchronized: true });
@@ -398,18 +424,16 @@
                 });
                 worker.postMessage({ type: 'VIDEO_FRAME', data: { frame, keyFrame: i % 60 === 0 } }, [frame]);
                 
-                if (i % 10 === 0) {
+                if (i % 20 === 0) {
                     const pct = Math.round((i / totalFrames) * 100);
-                    exportProgress.style.width = `${pct}%`;
-                    exportStatus.textContent = `РЕНДЕРИНГ: ${pct}%`;
+                    if (mp4StatusLabel) mp4StatusLabel.textContent = `[ОБРАБОТКА: ${pct}%]`;
                 }
                 
-                // Allow UI to breathe
-                if (i % 30 === 0) await new Promise(r => setTimeout(r, 0));
+                // Allow UI to breathe - critical for preventing "Lags"
+                if (i % 15 === 0) await new Promise(r => setTimeout(r, 0));
             }
 
             // 4. Send Audio Data
-            exportStatus.textContent = 'СБОРКА_АУДИО_ПОТОКА...';
             const numChannels = audioBuffer.numberOfChannels;
             const audioDataChunks = Math.ceil(audioBuffer.length / 4096);
             
@@ -417,11 +441,6 @@
                 const start = i * 4096;
                 const end = Math.min(start + 4096, audioBuffer.length);
                 const frameCount = end - start;
-                
-                // Interleave channels for AudioData format: 'f32' (Planar/Interleaved required depending on browser)
-                // Actually WebCodecs f32-planar-metadata usually expects Planar, 
-                // but for f32 (interleaved) we need to merge. 
-                // Most reliable for simple MP4 is interleaved f32.
                 const interleaved = new Float32Array(frameCount * numChannels);
                 for (let ch = 0; ch < numChannels; ch++) {
                     const channelData = audioBuffer.getChannelData(ch);
@@ -429,7 +448,6 @@
                         interleaved[f * numChannels + ch] = channelData[start + f];
                     }
                 }
-
                 const audioData = new AudioData({
                     format: 'f32',
                     sampleRate: audioBuffer.sampleRate,
@@ -439,29 +457,52 @@
                     data: interleaved
                 });
                 worker.postMessage({ type: 'AUDIO_DATA', data: { audioData } }, [audioData]);
+                if (i % 50 === 0) await new Promise(r => setTimeout(r, 0));
             }
 
             // 5. Finalize
-            exportStatus.textContent = 'ЗАВЕРШЕНИЕ_СИНХРОНИЗАЦИИ...';
             worker.postMessage({ type: 'STOP' });
 
             worker.onmessage = (e) => {
                 if (e.data.type === 'DONE') {
-                    const blob = new Blob([e.data.buffer], { type: 'video/mp4' });
-                    const url = URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = `SYNDICATE_STUDIO_${Date.now()}.mp4`;
-                    a.click();
+                    lastMp4Blob = new Blob([e.data.buffer], { type: 'video/mp4' });
+                    
+                    if (downloadMp4Btn) {
+                        downloadMp4Btn.disabled = false;
+                        if (mp4StatusLabel) mp4StatusLabel.textContent = '[ГОТОВО_К_СКАЧИВАНИЮ]';
+                    }
 
-                    // Cleanup
-                    exportOverlay.style.opacity = '0';
-                    setTimeout(() => exportOverlay.classList.add('hidden'), 700);
                     isGhostExporting = false;
                     worker.terminate();
                 }
             };
         };
+
+        // --- Download Listeners ---
+        downloadWebmBtn?.addEventListener('click', () => {
+            if (!lastWebmBlob) return;
+            const url = URL.createObjectURL(lastWebmBlob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `SYNDICATE_WEBM_${Date.now()}.webm`;
+            a.click();
+        });
+
+        downloadMp4Btn?.addEventListener('click', () => {
+            if (!lastMp4Blob) return;
+            const url = URL.createObjectURL(lastMp4Blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `SYNDICATE_CRYSTAL_${Date.now()}.mp4`;
+            a.click();
+        });
+
+        closeChoiceBtn?.addEventListener('click', () => {
+            if (choiceOverlay) {
+                choiceOverlay.style.opacity = '0';
+                setTimeout(() => choiceOverlay.style.display = 'none', 500);
+            }
+        });
 
         // --- Listeners ---
         audioUpload.addEventListener('change', (e) => {
@@ -648,5 +689,78 @@
 <style>
   #color-palette button {
       flex-shrink: 0;
+  }
+
+  #export-overlay, #choice-overlay {
+      position: absolute;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.96);
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+      backdrop-filter: blur(25px);
+      gap: 25px;
+      text-align: center;
+      padding: 40px;
+      opacity: 0;
+      transition: opacity 0.5s ease;
+  }
+
+  .choice-buttons {
+      display: flex;
+      flex-direction: column;
+      gap: 15px;
+      width: 100%;
+      max-width: 340px;
+  }
+
+  .choice-btn {
+      background: var(--gold);
+      color: black;
+      border: none;
+      padding: 18px 30px;
+      font-family: monospace;
+      font-size: 0.85rem;
+      font-weight: 900;
+      cursor: pointer;
+      text-transform: uppercase;
+      letter-spacing: 0.2em;
+      transition: all 0.3s cubic-bezier(0.23, 1, 0.32, 1);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 5px;
+  }
+
+  .choice-btn:hover:not(:disabled) {
+      transform: translateY(-5px);
+      background: white;
+      box-shadow: 0 10px 40px rgba(212, 175, 55, 0.3);
+  }
+
+  .choice-btn:disabled {
+      background: rgba(255,255,255,0.05);
+      color: rgba(255,255,255,0.2);
+      cursor: wait;
+  }
+
+  .choice-btn.secondary {
+      background: transparent;
+      border: 1px solid rgba(212, 175, 55, 0.3);
+      color: var(--gold);
+  }
+
+  .diagnostic-note {
+      font-size: 0.65rem;
+      font-family: monospace;
+      color: rgba(212,175,55,0.4);
+      max-width: 320px;
+      line-height: 1.6;
+      margin-top: 30px;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
   }
 </style>

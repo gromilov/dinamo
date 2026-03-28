@@ -23,7 +23,7 @@ self.onmessage = async (e) => {
         videoEncoder.configure({
             codec: 'avc1.42E028',
             width: 720, height: 1280,
-            bitrate: 3000000,
+            bitrate: 1500000,
             framerate: 30
         });
 
@@ -35,7 +35,7 @@ self.onmessage = async (e) => {
             codec: 'mp4a.40.2',
             numberOfChannels: 2,
             sampleRate: data.sampleRate,
-            bitrate: 128000
+            bitrate: 96000
         });
     }
 
