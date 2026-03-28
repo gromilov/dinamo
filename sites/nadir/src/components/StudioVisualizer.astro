@@ -95,6 +95,26 @@
   <!-- Audio element: invisible but NOT display:none (critical for some mobile engines) -->
   <audio id="studio-audio" controls preload="auto" class="opacity-0 pointer-events-none absolute -z-10"></audio>
 
+  <!-- Ghost Export Overlay -->
+  <div id="export-overlay" class="absolute inset-0 z-[60] flex flex-col items-center justify-center bg-black/95 backdrop-blur-3xl hidden opacity-0 transition-opacity duration-700">
+    <div class="w-full max-w-[300px] space-y-8 text-center">
+      <div class="space-y-3">
+        <h3 class="text-cyber-primary font-black uppercase tracking-[0.4em] text-sm animate-pulse">СИНХРОНИЗАЦИЯ_MP4</h3>
+        <p class="text-[9px] font-mono text-white/40 uppercase tracking-widest leading-relaxed px-4">
+          ПОДГОТОВКА_КРИСТАЛЬНОЙ_ВЕРСИИ_ДЛЯ_TELEGRAM. НЕ_ЗАКРЫВАЙТЕ_СТРАНИЦУ.
+        </p>
+      </div>
+      
+      <div class="relative h-1 w-full bg-white/5 overflow-hidden">
+        <div id="export-progress" class="absolute top-0 left-0 h-full bg-cyber-primary w-0 transition-all duration-300"></div>
+      </div>
+      
+      <div id="export-status" class="text-[8px] font-mono text-cyber-primary/60 uppercase tracking-[0.3em]">
+        ИНИЦИАЛИЗАЦИЯ_ЯДРА...
+      </div>
+    </div>
+  </div>
+
 </div>
 
 <script>
@@ -133,6 +153,13 @@
         let hasLoadedFile = false;
         let recordStartTime = 0;
         let selectedMimeType = '';
+
+        // --- Ghost Export State ---
+        let audioBuffer: AudioBuffer | null = null;
+        let isGhostExporting = false;
+        const exportOverlay = document.getElementById('export-overlay');
+        const exportProgress = document.getElementById('export-progress');
+        const exportStatus = document.getElementById('export-status');
 
         // --- Palette Setup ---
         const colors = [
@@ -300,6 +327,9 @@
                 if(stopLayer) { stopLayer.classList.add('hidden'); stopLayer.style.opacity = '0'; }
                 if(statusText) statusText.textContent = 'ГОТОВО';
                 isRecording = false;
+
+                // Start Ghost Export to MP4
+                runGhostExport();
             };
         };
 
@@ -308,6 +338,129 @@
                 studioAudio.pause();
                 mediaRecorder.stop();
             }
+        };
+
+        // --- Ghost Export Core ---
+        const runGhostExport = async () => {
+            if (!audioBuffer || !exportOverlay || !exportProgress || !exportStatus) return;
+            isGhostExporting = true;
+            
+            // Show Overlay
+            exportOverlay.classList.remove('hidden');
+            setTimeout(() => exportOverlay.style.opacity = '1', 50);
+            exportStatus.textContent = 'ИНИЦИАЛИЗАЦИЯ_ВОРКЕРА...';
+            exportProgress.style.width = '0%';
+
+            const duration = audioBuffer.duration;
+            const fps = 30;
+            const totalFrames = Math.floor(duration * fps);
+            const sampleRate = audioBuffer.sampleRate;
+
+            // 1. Setup Worker
+            const worker = new Worker(new URL('./encoder.worker.js', import.meta.url), { type: 'module' });
+            worker.postMessage({ type: 'START', data: { sampleRate } });
+
+            // 2. Offline Audio Analysis (Extract features for visualization)
+            exportStatus.textContent = 'АНАЛИЗ_РЕЗОНАНСА...';
+            const offlineCtx = new OfflineAudioContext(audioBuffer.numberOfChannels, audioBuffer.length, sampleRate);
+            const source = offlineCtx.createBufferSource();
+            source.buffer = audioBuffer;
+            const offlineAnalyser = offlineCtx.createAnalyser();
+            offlineAnalyser.fftSize = 512;
+            source.connect(offlineAnalyser);
+            source.start(0);
+
+            // Step through and capture frequency data
+            const framesData: Uint8Array[] = [];
+            for (let i = 0; i < totalFrames; i++) {
+                offlineCtx.suspend(i / fps).then(() => {
+                    const data = new Uint8Array(offlineAnalyser.frequencyBinCount);
+                    offlineAnalyser.getByteFrequencyData(data);
+                    framesData.push(new Uint8Array(data));
+                }).then(() => offlineCtx.resume());
+            }
+            await offlineCtx.startRendering();
+
+            // 3. Render & Encode Loop
+            exportStatus.textContent = 'РЕНДЕРИНГ_КАДРОВ_MP4...';
+            const ghostCanvas = document.createElement('canvas');
+            ghostCanvas.width = 720; ghostCanvas.height = 1280;
+            const gctx = ghostCanvas.getContext('2d', { alpha: false, desynchronized: true });
+            
+            for (let i = 0; i < totalFrames; i++) {
+                if (!gctx) break;
+                const time = i / fps;
+                renderFrame(gctx, framesData[i], time, selectedColor, (studioTextInput?.value || 'СИНДИКАТ').toUpperCase(), true);
+                
+                const frame = new VideoFrame(ghostCanvas, {
+                    timestamp: (i * 1000000) / fps,
+                    duration: 1000000 / fps
+                });
+                worker.postMessage({ type: 'VIDEO_FRAME', data: { frame, keyFrame: i % 60 === 0 } }, [frame]);
+                
+                if (i % 10 === 0) {
+                    const pct = Math.round((i / totalFrames) * 100);
+                    exportProgress.style.width = `${pct}%`;
+                    exportStatus.textContent = `РЕНДЕРИНГ: ${pct}%`;
+                }
+                
+                // Allow UI to breathe
+                if (i % 30 === 0) await new Promise(r => setTimeout(r, 0));
+            }
+
+            // 4. Send Audio Data
+            exportStatus.textContent = 'СБОРКА_АУДИО_ПОТОКА...';
+            const numChannels = audioBuffer.numberOfChannels;
+            const audioDataChunks = Math.ceil(audioBuffer.length / 4096);
+            
+            for (let i = 0; i < audioDataChunks; i++) {
+                const start = i * 4096;
+                const end = Math.min(start + 4096, audioBuffer.length);
+                const frameCount = end - start;
+                
+                // Interleave channels for AudioData format: 'f32' (Planar/Interleaved required depending on browser)
+                // Actually WebCodecs f32-planar-metadata usually expects Planar, 
+                // but for f32 (interleaved) we need to merge. 
+                // Most reliable for simple MP4 is interleaved f32.
+                const interleaved = new Float32Array(frameCount * numChannels);
+                for (let ch = 0; ch < numChannels; ch++) {
+                    const channelData = audioBuffer.getChannelData(ch);
+                    for (let f = 0; f < frameCount; f++) {
+                        interleaved[f * numChannels + ch] = channelData[start + f];
+                    }
+                }
+
+                const audioData = new AudioData({
+                    format: 'f32',
+                    sampleRate: audioBuffer.sampleRate,
+                    numberOfFrames: frameCount,
+                    numberOfChannels: numChannels,
+                    timestamp: (start * 1000000) / audioBuffer.sampleRate,
+                    data: interleaved
+                });
+                worker.postMessage({ type: 'AUDIO_DATA', data: { audioData } }, [audioData]);
+            }
+
+            // 5. Finalize
+            exportStatus.textContent = 'ЗАВЕРШЕНИЕ_СИНХРОНИЗАЦИИ...';
+            worker.postMessage({ type: 'STOP' });
+
+            worker.onmessage = (e) => {
+                if (e.data.type === 'DONE') {
+                    const blob = new Blob([e.data.buffer], { type: 'video/mp4' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `SYNDICATE_STUDIO_${Date.now()}.mp4`;
+                    a.click();
+
+                    // Cleanup
+                    exportOverlay.style.opacity = '0';
+                    setTimeout(() => exportOverlay.classList.add('hidden'), 700);
+                    isGhostExporting = false;
+                    worker.terminate();
+                }
+            };
         };
 
         // --- Listeners ---
@@ -324,6 +477,19 @@
             studioAudio.crossOrigin = "anonymous";
             studioAudio.src = URL.createObjectURL(file);
             studioAudio.load();
+            
+            // Background Audio Decoding for Ghost Render
+            const prepareAudioBuffer = async () => {
+                const ctx = audioContext || (initAudioEngine(), audioContext);
+                if (!ctx) return;
+                try {
+                    const arrayBuffer = await file.arrayBuffer();
+                    audioBuffer = await ctx.decodeAudioData(arrayBuffer);
+                    console.log('[Audio] AudioBuffer Ready for Ghost Export:', audioBuffer.duration, 's');
+                } catch (e) { console.error('[Audio] Decoding failed', e); }
+            };
+            prepareAudioBuffer();
+
             studioAudio.oncanplay = () => {
                 hasLoadedFile = true;
                 btnRecord.disabled = false;
@@ -373,19 +539,17 @@
         
         const gridCanvas = document.createElement('canvas');
         gridCanvas.width = cw; gridCanvas.height = ch;
-        const gctx = gridCanvas.getContext('2d');
-        if (gctx) {
-            gctx.strokeStyle = 'rgba(255, 255, 255, 0.012)';
-            gctx.lineWidth = 1;
-            for(let x=0; x<cw; x+=40) { gctx.moveTo(x,0); gctx.lineTo(x,ch); }
-            for(let y=0; y<ch; y+=40) { gctx.moveTo(0,y); gctx.lineTo(cw,y); }
-            gctx.stroke();
+        const gctx_grid = gridCanvas.getContext('2d');
+        if (gctx_grid) {
+            gctx_grid.strokeStyle = 'rgba(255, 255, 255, 0.012)';
+            gctx_grid.lineWidth = 1;
+            for(let x=0; x<cw; x+=40) { gctx_grid.moveTo(x,0); gctx_grid.lineTo(x,ch); }
+            for(let y=0; y<ch; y+=40) { gctx_grid.moveTo(0,y); gctx_grid.lineTo(cw,y); }
+            gctx_grid.stroke();
         }
 
-        let time = 0;
-        const draw = () => {
-            if (!ctx) return;
-            requestAnimationFrame(draw);
+        const renderFrame = (ctx: CanvasRenderingContext2D, data: Uint8Array, time: number, color: string, text: string, isOffline = false) => {
+            const cw = 720, ch = 1280;
             
             // 1. Perfect clear for dark backgrounds
             ctx.clearRect(0, 0, cw, ch);
@@ -393,14 +557,11 @@
             ctx.fillRect(0, 0, cw, ch);
             
             ctx.drawImage(gridCanvas, 0, 0);
-            time += 0.015;
 
-            const isDormant = !hasLoadedFile || studioAudio.paused;
-            const data = new Uint8Array(analyser ? analyser.frequencyBinCount : 512);
+            const isDormant = !isOffline && (!hasLoadedFile || studioAudio.paused);
             let bass = 0, vocals = 0;
 
-            if (!isDormant && analyser) {
-                analyser.getByteFrequencyData(data);
+            if (!isDormant && data) {
                 let bSum = 0, vSum = 0;
                 for(let i=0; i<8; i++) bSum += data[i];
                 for(let i=5; i<45; i++) vSum += data[i];
@@ -416,7 +577,7 @@
             const eyeGlow = 40 + (isDormant ? breathe*3 : Math.pow(vocals/255, 2) * 50);
 
             ctx.save();
-            const msg = (studioTextInput?.value || 'СИНДИКАТ').toUpperCase();
+            const msg = text.toUpperCase();
             ctx.font = '20px monospace'; ctx.textAlign = 'center'; ctx.fillStyle = 'rgba(255,255,255,0.3)';
             ctx.letterSpacing = '8px'; ctx.fillText(msg, cw/2, ch*0.82);
 
@@ -425,7 +586,7 @@
             ctx.scale(scale, scale);
             
             // 2. Clean Shadows-Free Mouth
-            ctx.fillStyle = `rgba(${selectedColor}, 0.9)`;
+            ctx.fillStyle = `rgba(${color}, 0.9)`;
             const numBars = 25;
             const mouthY = 20 + pulse;
             for (let i = 0; i < numBars; i++) {
@@ -443,8 +604,8 @@
             // 3. Glowing Eyes (Layered OVER mouth for depth)
             ctx.save();
             ctx.shadowBlur = eyeGlow;
-            ctx.shadowColor = `rgba(${selectedColor}, 1)`;
-            ctx.fillStyle = `rgba(${selectedColor}, 0.98)`;
+            ctx.shadowColor = `rgba(${color}, 1)`;
+            ctx.fillStyle = `rgba(${color}, 0.98)`;
             
             // Eye Paths
             ctx.beginPath();
@@ -465,6 +626,20 @@
             ctx.restore();
             
             ctx.restore();
+        };
+
+        let time = 0;
+        const draw = () => {
+            if (!ctx) return;
+            requestAnimationFrame(draw);
+            
+            const data = new Uint8Array(analyser ? analyser.frequencyBinCount : 512);
+            if (analyser && !studioAudio.paused) {
+                analyser.getByteFrequencyData(data);
+            }
+            
+            time += 0.015;
+            renderFrame(ctx, data, time, selectedColor, (studioTextInput?.value || 'СИНДИКАТ').toUpperCase());
         };
         draw();
     });
