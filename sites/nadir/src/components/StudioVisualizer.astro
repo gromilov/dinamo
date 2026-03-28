@@ -131,9 +131,27 @@
         let videoEncoder: VideoEncoder | null = null;
         let audioEncoder: AudioEncoder | null = null;
         let frameCount = 0;
-        let audioProcessingNode: ScriptProcessorNode | null = null;
+        let audioProcessingNode: AudioWorkletNode | null = null;
+        let workletRegistered = false;
         let recordStartTime = 0;
         let recordStartTimeAbs = 0;
+        
+        // Define AudioWorklet inline to avoid extra files
+        const workletCode = `
+            class AudioCaptureProcessor extends AudioWorkletProcessor {
+                process(inputs, outputs, parameters) {
+                    const input = inputs[0];
+                    if (input && input.length > 0) {
+                        // Send audio samples to main thread
+                        this.port.postMessage([input[0], input[1]]);
+                    }
+                    return true;
+                }
+            }
+            registerProcessor('audio-capture-processor', AudioCaptureProcessor);
+        `;
+        const workletBlob = new Blob([workletCode], { type: 'application/javascript' });
+        const workletUrl = URL.createObjectURL(workletBlob);
 
         // --- Palette Setup ---
         const colors = [
@@ -179,7 +197,7 @@
         });
 
         // --- Audio Engine Core ---
-        const initAudioEngine = () => {
+        const initAudioEngine = async () => {
             // If already exists and running, we are fine
             if (audioContext && audioContext.state !== 'closed') return;
             
@@ -191,9 +209,18 @@
                 audioContext.onstatechange = () => {
                     console.log(`[AudioContext] State: ${audioContext?.state}`);
                     if (audioContext?.state === 'running') {
-                        hideErrorModal(); // Hide modal if it was shown due to error
+                        hideErrorModal();
                     }
                 };
+
+                // Register AudioWorklet
+                if (!workletRegistered) {
+                    try {
+                        await audioContext.audioWorklet.addModule(workletUrl);
+                        workletRegistered = true;
+                        console.log('[Audio] Worklet Registered');
+                    } catch (err) { console.error('[Audio] Worklet Failed', err); }
+                }
 
                 analyser = audioContext.createAnalyser();
                 analyser.fftSize = 512;
@@ -205,7 +232,7 @@
                 gain.gain.value = 0.00001;
                 osc.connect(gain); gain.connect(audioContext.destination);
                 osc.start();
-                console.log('[Audio] Engine Ready (Playback Mode)');
+                console.log('[Audio] Engine Ready (AudioWorklet Mode)');
             } catch(e) { 
                 console.error('[Audio] Init Failed - Resetting', e);
                 if (audioContext) { 
@@ -277,12 +304,12 @@
                 bitrate: 128000
             });
 
-            // 4. Audio Capture (using ScriptProcessor)
-            audioProcessingNode = audioContext!.createScriptProcessor(4096, 2, 2);
-            audioProcessingNode.onaudioprocess = (e) => {
+            // 4. Audio Capture (using AudioWorklet for thread-safety)
+            audioProcessingNode = new AudioWorkletNode(audioContext!, 'audio-capture-processor');
+            audioProcessingNode.port.onmessage = (e) => {
                 if (!isRecording) return;
-                const inputLeft = e.inputBuffer.getChannelData(0);
-                const inputRight = e.inputBuffer.getChannelData(1);
+                const [inputLeft, inputRight] = e.data;
+                if (!inputLeft || !inputRight) return;
                 
                 // AAC (f32-planar) requires all Left samples followed by all Right samples (LLLLRRRR)
                 const data = new Float32Array(inputLeft.length + inputRight.length);
@@ -304,7 +331,7 @@
             };
             
             analyser?.connect(audioProcessingNode);
-            audioProcessingNode.connect(audioContext!.destination);
+            // We don't need to connect to destination as we only want to capture samples
 
             recordStartTimeAbs = performance.now();
             recordStartTime = audioContext!.currentTime;
