@@ -240,10 +240,10 @@
             for (const c of candidates) { if (MediaRecorder.isTypeSupported(c)) { mime = c; break; } }
             selectedMimeType = mime;
 
-            // Force high-quality bitrate and frequent keyframes for better trimming/seeking
+            // Force stable bitrate and 100ms timeslice to force frequent clusters for better Telegram trimming
             const recorderOptions: any = { 
                 mimeType: mime, 
-                videoBitsPerSecond: 1500000 // 1.5 Mbps for stability and quality
+                videoBitsPerSecond: 1200000 
             };
 
             // Chrome-based browsers (Android) support forcing keyframe intervals
@@ -287,6 +287,13 @@
         audioUpload.addEventListener('change', (e) => {
             const file = (e.target as HTMLInputElement).files?.[0];
             if (!file) return;
+
+            // Trigger error modal for potential 0-byte or corrupted files
+            if (file.size === 0) {
+                if (errorModal) errorModal.classList.remove('hidden');
+                return;
+            }
+
             studioAudio.crossOrigin = "anonymous";
             studioAudio.src = URL.createObjectURL(file);
             studioAudio.load();
@@ -304,6 +311,12 @@
             try {
                 if (audioContext?.state === 'suspended') await audioContext.resume();
                 studioAudio.currentTime = 0;
+                
+                // Set auto-stop when track ends
+                studioAudio.onended = () => {
+                    if (isRecording) executeStop();
+                };
+
                 await studioAudio.play();
                 
                 if (isAndroid) await new Promise(r => setTimeout(r, 150));
@@ -316,7 +329,8 @@
                 
                 recordedChunks = [];
                 recordStartTime = performance.now();
-                mediaRecorder.start(1000);
+                // 100ms timeslice creates more frequent WebM clusters for precise seeking
+                mediaRecorder.start(100);
                 isRecording = true;
                 if(statusText) statusText.textContent = 'ЗАПИСЬ...';
             } catch (err) { console.error('Record Start Fail:', err); }
@@ -383,11 +397,27 @@
             const scale = (cw*0.8/120) + (bass/255)*0.5;
             ctx.scale(scale, scale);
             
-            // 2. Isolated Shadows for Eyes
+            // 2. Clean Shadows-Free Mouth
+            ctx.fillStyle = `rgba(${selectedColor}, 0.9)`;
+            const numBars = 25;
+            const mouthY = 20 + pulse;
+            for (let i = 0; i < numBars; i++) {
+                const val = isDormant ? 0 : data[5 + Math.floor(i * (40/numBars))];
+                const taper = 1 - Math.pow(i/numBars, 2);
+                const h = isDormant ? (2+breathe)*taper+1 : (Math.pow(val/255, 3)*70*taper)+2;
+                const xRight = i*2.8; const xLeft = -i*2.8 - 2.8;
+                ctx.fillRect(xRight + 1.4, mouthY, 1.5, h);
+                ctx.fillRect(xLeft + 1.4, mouthY, 1.5, h);
+                const uH = h*0.5 + (isDormant?1:2);
+                ctx.fillRect(xRight + 1.4, mouthY - uH - 4, 1.5, uH);
+                ctx.fillRect(xLeft + 1.4, mouthY - uH - 4, 1.5, uH);
+            }
+
+            // 3. Glowing Eyes (Layered OVER mouth for depth)
             ctx.save();
             ctx.shadowBlur = eyeGlow;
             ctx.shadowColor = `rgba(${selectedColor}, 1)`;
-            ctx.fillStyle = `rgba(${selectedColor}, 0.95)`;
+            ctx.fillStyle = `rgba(${selectedColor}, 0.98)`;
             
             // Eye Paths
             ctx.beginPath();
@@ -407,21 +437,6 @@
             ctx.fill();
             ctx.restore();
             
-            // 3. Clean Shadows-Free Mouth (Prevents parasitic bloom)
-            ctx.fillStyle = `rgba(${selectedColor}, 0.9)`;
-            const numBars = 25;
-            const mouthY = 20 + pulse;
-            for (let i = 0; i < numBars; i++) {
-                const val = isDormant ? 0 : data[5 + Math.floor(i * (40/numBars))];
-                const taper = 1 - Math.pow(i/numBars, 2);
-                const h = isDormant ? (2+breathe)*taper+1 : (Math.pow(val/255, 3)*70*taper)+2;
-                const xRight = i*2.8; const xLeft = -i*2.8 - 2.8;
-                ctx.fillRect(xRight + 1.4, mouthY, 1.5, h);
-                ctx.fillRect(xLeft + 1.4, mouthY, 1.5, h);
-                const uH = h*0.5 + (isDormant?1:2);
-                ctx.fillRect(xRight + 1.4, mouthY - uH - 4, 1.5, uH);
-                ctx.fillRect(xLeft + 1.4, mouthY - uH - 4, 1.5, uH);
-            }
             ctx.restore();
         };
         draw();
