@@ -1,10 +1,10 @@
 ---
 import Layout from "../layouts/Layout.astro";
-import PromoVisualizer from "../components/PromoVisualizer.astro";
+import StudioVisualizer from "../components/StudioVisualizer.astro";
 import CyberButton from "../components/ui/CyberButton.astro";
 ---
 
-<Layout title="ГЕНЕРАТОР РЕЗОНАНСА // ПРОМО" hidePulse={true} hideBackground={true}>
+<Layout title="ГЕНЕРАТОР РЕЗОНАНСА // STUDIO" hidePulse={true} hideBackground={true}>
   <main class="min-h-screen flex flex-col items-center justify-between py-12 px-0 sm:p-8 relative z-10 w-full overflow-x-hidden">
     
     <!-- Header for Context (Hidden on small mobile to maximize space, visible on tablet/desktop) -->
@@ -14,7 +14,7 @@ import CyberButton from "../components/ui/CyberButton.astro";
     </header>
 
     <!-- The 9:16 Generator Component -->
-    <PromoVisualizer />
+    <StudioVisualizer />
 
     <!-- Navigation / Context -->
     <div class="w-full max-w-[450px] mt-8 text-center flex flex-col items-center space-y-4">

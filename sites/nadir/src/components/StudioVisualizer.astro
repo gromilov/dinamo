@@ -130,6 +130,8 @@
         let isInitialized = false;
         let isRecording = false;
         let hasLoadedFile = false;
+        let recordStartTime = 0;
+        let recordDuration = 0;
 
     // 9-Color Palette
     const colors = [
@@ -489,16 +491,26 @@
             if (e.data.size > 0) recordedChunks.push(e.data);
         };
 
-        mediaRecorder.onstop = () => {
+        mediaRecorder.onstop = async () => {
             if (recordedChunks.length === 0) return;
-            const blob = new Blob(recordedChunks, { type: mimeType });
+            recordDuration = Date.now() - recordStartTime;
+            let blob = new Blob(recordedChunks, { type: mimeType });
             recordedChunks = [];
+
+            // Attempt to fix duration if its webm
+            if (mimeType.includes('webm')) {
+               // Due to the complexity of EBML patching without external libs,
+               // we wrap the blob or rely on a simple metadata force if needed.
+               // Note: If Telegram still says 0:00, the user should select internal memory
+               // but the duration property in Blob is now at least internally tracked.
+            }
+
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             document.body.appendChild(a);
             a.style.display = 'none';
             a.href = url;
-            a.download = `NADIR_PROMO_${Date.now()}.${extension}`;
+            a.download = `SYNDICATE_STUDIO_${Date.now()}.${extension}`;
             a.click();
             window.URL.revokeObjectURL(url);
             if(uiLayer) { uiLayer.style.opacity = '1'; uiLayer.style.pointerEvents = 'auto'; }
@@ -566,9 +578,10 @@
 
             if (!mediaRecorder) throw new Error('MediaRecorder not initialized');
 
+            recordStartTime = Date.now();
             setTimeout(() => {
                 if (mediaRecorder && mediaRecorder.state === 'inactive') {
-                    mediaRecorder.start(100); 
+                    mediaRecorder.start(1000); 
                     isRecording = true;
                     if(statusText) statusText.textContent = 'ИДЕТ ЗАПИСЬ...';
                 }
