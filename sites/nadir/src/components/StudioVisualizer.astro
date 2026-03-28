@@ -240,9 +240,18 @@
             for (const c of candidates) { if (MediaRecorder.isTypeSupported(c)) { mime = c; break; } }
             selectedMimeType = mime;
 
-            mediaRecorder = new MediaRecorder(mixedStream, { 
-                mimeType: mime, videoBitsPerSecond: isAndroid ? 1200000 : 2500000 
-            });
+            // Force high-quality bitrate and frequent keyframes for better trimming/seeking
+            const recorderOptions: any = { 
+                mimeType: mime, 
+                videoBitsPerSecond: 1500000 // 1.5 Mbps for stability and quality
+            };
+
+            // Chrome-based browsers (Android) support forcing keyframe intervals
+            if (isAndroid) {
+                recorderOptions.videoKeyframeIntervalDuration = 1000; // Keyframe every 1s
+            }
+
+            mediaRecorder = new MediaRecorder(mixedStream, recorderOptions);
 
             mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) recordedChunks.push(e.data); };
             mediaRecorder.onstop = async () => {
@@ -336,8 +345,13 @@
         const draw = () => {
             if (!ctx) return;
             requestAnimationFrame(draw);
-            ctx.fillStyle = '#000000'; ctx.fillRect(0,0,cw,ch);
-            ctx.drawImage(gridCanvas, 0,0);
+            
+            // 1. Perfect clear for dark backgrounds
+            ctx.clearRect(0, 0, cw, ch);
+            ctx.fillStyle = '#000000'; 
+            ctx.fillRect(0, 0, cw, ch);
+            
+            ctx.drawImage(gridCanvas, 0, 0);
             time += 0.015;
 
             const isDormant = !hasLoadedFile || studioAudio.paused;
@@ -369,11 +383,13 @@
             const scale = (cw*0.8/120) + (bass/255)*0.5;
             ctx.scale(scale, scale);
             
+            // 2. Isolated Shadows for Eyes
+            ctx.save();
             ctx.shadowBlur = eyeGlow;
             ctx.shadowColor = `rgba(${selectedColor}, 1)`;
-            ctx.fillStyle = `rgba(${selectedColor}, 0.9)`;
+            ctx.fillStyle = `rgba(${selectedColor}, 0.95)`;
             
-            // Eyes
+            // Eye Paths
             ctx.beginPath();
             if(isDormant) {
                 ctx.moveTo(-50, -45 + pulse); ctx.lineTo(-15, -38 + pulse); ctx.lineTo(-45, -43 + pulse);
@@ -389,8 +405,10 @@
                 ctx.moveTo(55, -50 + pulse); ctx.lineTo(15, -28 + anger + pulse); ctx.lineTo(30, -35 + pulse);
             }
             ctx.fill();
+            ctx.restore();
             
-            // Mouth
+            // 3. Clean Shadows-Free Mouth (Prevents parasitic bloom)
+            ctx.fillStyle = `rgba(${selectedColor}, 0.9)`;
             const numBars = 25;
             const mouthY = 20 + pulse;
             for (let i = 0; i < numBars; i++) {
