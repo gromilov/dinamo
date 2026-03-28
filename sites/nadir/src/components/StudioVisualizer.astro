@@ -103,7 +103,7 @@
 <script>
     // Howler is retained for potential future iOS debugging
     import { Howl, Howler } from 'howler';
-    import fixWebmDuration from 'fix-webm-duration';
+    import { Decoder, Reader, tools } from 'ts-ebml';
 
     document.addEventListener('DOMContentLoaded', () => {
         const audioUpload = document.getElementById('audio-upload') as HTMLInputElement;
@@ -469,7 +469,14 @@
 
         let mimeType = 'video/mp4';
         let extension = 'mp4';
-        const candidateMimeTypes = ['video/mp4', 'video/webm;codecs=h264', 'video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm'];
+        const candidateMimeTypes = [
+            'video/mp4;codecs=avc1.42E01E', // Highly compatible H.264 Baseline
+            'video/mp4', 
+            'video/webm;codecs=h264', 
+            'video/webm;codecs=vp9', 
+            'video/webm;codecs=vp8', 
+            'video/webm'
+        ];
         for (const candidate of candidateMimeTypes) {
             if (MediaRecorder.isTypeSupported(candidate)) {
                 mimeType = candidate;
@@ -498,15 +505,26 @@
             let blob = new Blob(recordedChunks, { type: mimeType });
             recordedChunks = [];
 
-            // Fix duration if it's webm
+            // Advanced EBML Re-muxing for Telegram/WebM compatibility
             if (mimeType.includes('webm')) {
                 try {
-                    console.log(`[Fix] Applying duration patch: ${Math.round(recordDuration)}ms`);
-                    blob = await new Promise(resolve => {
-                        (fixWebmDuration as any)(blob, recordDuration, resolve);
-                    });
+                    console.log(`[Re-mux] Starting EBML analysis: ${Math.round(recordDuration)}ms`);
+                    const decoder = new Decoder();
+                    const reader = new Reader();
+                    (reader as any).logging = false;
+                    (reader as any).drop_default_duration = false;
+
+                    const buffer = await blob.arrayBuffer();
+                    const elms = decoder.decode(buffer);
+                    elms.forEach((elm) => reader.read(elm));
+                    reader.stop();
+
+                    const refinedMetadataBuf = tools.makeMetadataSeekable(reader.metadatas, reader.duration, reader.cues);
+                    const body = buffer.slice(reader.metadataSize);
+                    blob = new Blob([refinedMetadataBuf, body], { type: mimeType });
+                    console.log(`[Re-mux] Success: Seekable WebM generated`);
                 } catch (fixErr) {
-                    console.warn('[Fix] Patching failed, using raw blob', fixErr);
+                    console.error('[Re-mux] Failure during EBML refinement', fixErr);
                 }
             }
 
