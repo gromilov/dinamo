@@ -1,4 +1,4 @@
-import { Muxer, ArrayBufferTarget } from '../../node_modules/mp4-muxer/build/mp4-muxer.mjs';
+import { Muxer, ArrayBufferTarget } from '../lib/mp4-muxer.mjs';
 
 let muxer = null;
 let videoEncoder = null;

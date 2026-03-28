@@ -5,14 +5,10 @@ import tailwindv4 from '@tailwindcss/vite';
 export default defineConfig({
   site: 'https://dinamo.saitik.su',
   base: '/nadir/',
-  ssr: {
-    noExternal: ['mp4-muxer'],
-  },
   vite: {
     plugins: [tailwindv4()],
     worker: {
       format: 'es',
-      noExternal: ['mp4-muxer'],
     },
   },
 });
