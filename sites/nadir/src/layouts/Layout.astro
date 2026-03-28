@@ -57,9 +57,14 @@ const faviconSvg = "data:image/svg+xml,%3Csvg viewBox='0 0 100 100' xmlns='http:
 		<div class="content-wrapper">
 			<slot />
 		</div>
-		{!hidePulse && <ScribePulse />}
+		{ !hidePulse && <ScribePulse /> }
 	</body>
 </html>
+
+<script>
+	import { initSentinel } from "../lib/sentinel";
+	initSentinel("dinamo.saitik.su/nadir");
+</script>
 
 <style is:global>
 	.cyber-background {
