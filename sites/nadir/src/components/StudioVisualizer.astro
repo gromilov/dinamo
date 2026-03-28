@@ -1,12 +1,12 @@
 ---
-// PromoVisualizer.astro
-// Вертикальный 9:16 модуль для генерации рекламного Резонанса
+// StudioVisualizer.astro
+// Вертикальный 9:16 модуль для генерации студийного Резонанса
 ---
 
-<div class="promo-generator-container w-full max-w-[450px] mx-auto aspect-[9/16] relative overflow-hidden flex flex-col bg-[#020205]">
+<div class="studio-generator-container w-full max-w-[450px] mx-auto aspect-[9/16] relative overflow-hidden flex flex-col bg-[#020205]">
   
   <!-- The Canvas for Web Audio Visuals (Face, Text, Background) -->
-  <canvas id="promo-canvas" class="absolute inset-0 w-full h-full z-0 pointer-events-none"></canvas>
+  <canvas id="studio-canvas" class="absolute inset-0 w-full h-full z-0 pointer-events-none"></canvas>
 
   <!-- Dedicated STOP button during recording -->
   <div id="stop-layer" class="absolute bottom-8 left-1/2 -translate-x-1/2 z-30 hidden opacity-0 transition-opacity duration-300">
@@ -17,7 +17,7 @@
   </div>
 
   <!-- UI Controls (Visible during configuration, hidden during recording) -->
-  <div id="promo-ui" class="absolute inset-0 z-20 flex flex-col justify-end bg-gradient-to-t from-black via-black/80 to-transparent p-4 sm:p-6 pb-6 transition-opacity duration-500">
+  <div id="studio-ui" class="absolute inset-0 z-20 flex flex-col justify-end bg-gradient-to-t from-black via-black/80 to-transparent p-4 sm:p-6 pb-6 transition-opacity duration-500">
      
      <div class="space-y-4 w-full backdrop-blur-md bg-black/60 p-4 pb-12 sm:p-5 shadow-none border-t border-white/5">
         
@@ -49,7 +49,7 @@
         <!-- Dynamic Message Input -->
         <div class="flex flex-col space-y-2 pt-1 border-t border-white/10">
            <label class="text-[9px] font-mono text-cyber-muted uppercase tracking-widest pl-1 pt-2">ТЕКСТ (СООБЩЕНИЕ)</label>
-           <input type="text" id="promo-text" placeholder="СИНДИКАТ" maxlength="20" class="bg-transparent border-b border-white/20 text-[10px] font-mono text-white placeholder:text-white/20 focus:border-cyber-primary outline-none py-1 px-1 tracking-[0.3em] uppercase transition-colors"/>
+           <input type="text" id="studio-text" placeholder="СИНДИКАТ" maxlength="20" class="bg-transparent border-b border-white/20 text-[10px] font-mono text-white placeholder:text-white/20 focus:border-cyber-primary outline-none py-1 px-1 tracking-[0.3em] uppercase transition-colors"/>
         </div>
 
         <!-- Color Palette Picker -->
@@ -93,7 +93,7 @@
   </div>
 
   <!-- Audio element: invisible but NOT display:none (critical for some mobile engines) -->
-  <audio id="promo-audio" controls preload="auto" class="opacity-0 pointer-events-none absolute -z-10"></audio>
+  <audio id="studio-audio" controls preload="auto" class="opacity-0 pointer-events-none absolute -z-10"></audio>
 
 
 
@@ -108,18 +108,18 @@
         const audioUpload = document.getElementById('audio-upload') as HTMLInputElement;
         const btnRecord = document.getElementById('btn-record') as HTMLButtonElement;
         const btnStop = document.getElementById('btn-stop') as HTMLButtonElement;
-        const canvas = document.getElementById('promo-canvas') as HTMLCanvasElement;
-        const promoAudio = document.getElementById('promo-audio') as HTMLAudioElement;
+        const canvas = document.getElementById('studio-canvas') as HTMLCanvasElement;
+        const studioAudio = document.getElementById('studio-audio') as HTMLAudioElement;
         
-        const uiLayer = document.getElementById('promo-ui');
+        const uiLayer = document.getElementById('studio-ui');
         const stopLayer = document.getElementById('stop-layer');
         const statusText = document.getElementById('recording-status');
         const paletteContainer = document.getElementById('color-palette');
-        const promoTextInput = document.getElementById('promo-text') as HTMLInputElement;
+        const studioTextInput = document.getElementById('studio-text') as HTMLInputElement;
         const errorModal = document.getElementById('error-modal');
         const closeModal = document.getElementById('close-modal');
 
-        if (!audioUpload || !btnRecord || !canvas || !btnStop || !paletteContainer || !promoAudio) return;
+        if (!audioUpload || !btnRecord || !canvas || !btnStop || !paletteContainer || !studioAudio) return;
 
         // --- State & Context ---
         const isAndroid = /Android/i.test(navigator.userAgent);
@@ -191,7 +191,7 @@
             // Route: Element -> Analyser -> Destination (Mirror everything to the visualizer)
             // Essential: NO crossorigin for blob URLs, but we need it for some data URIs.
             // We handle this by setting it dynamically in the upload handler if needed.
-            const elementSrc = audioContext.createMediaElementSource(promoAudio);
+            const elementSrc = audioContext.createMediaElementSource(studioAudio);
             elementSrc.connect(analyser);
             analyser.connect(audioContext.destination);
 
@@ -251,39 +251,39 @@
         }
         const loadAudio = (src: string, type: string) => {
             // Essential: clear src and sources to avoid ambiguity
-            promoAudio.removeAttribute('src');
-            promoAudio.innerHTML = '';
+            studioAudio.removeAttribute('src');
+            studioAudio.innerHTML = '';
             
             // Try explicit <source> first (like NadirVoice)
             const source = document.createElement('source');
             source.src = src;
             source.type = type;
-            promoAudio.appendChild(source);
+            studioAudio.appendChild(source);
             
             // Fallback: set direct src AFTER a small delay if loading fails
             // Some mobile browsers prefer direct src for blobs
             const fallbackTimeout = setTimeout(() => {
-                if (promoAudio.networkState === 3 || promoAudio.networkState === 0) { // EMPTY or NO_SOURCE
+                if (studioAudio.networkState === 3 || studioAudio.networkState === 0) { // EMPTY or NO_SOURCE
                     console.log('Switching to direct src fallback...');
-                    promoAudio.src = src;
-                    promoAudio.load();
+                    studioAudio.src = src;
+                    studioAudio.load();
                 }
             }, 300);
 
             // Detailed status chain
-            promoAudio.onloadedmetadata = () => { if (statusText) statusText.textContent = 'МЕТАДАННЫЕ [OK]...'; };
-            promoAudio.oncanplay = () => {
+            studioAudio.onloadedmetadata = () => { if (statusText) statusText.textContent = 'МЕТАДАННЫЕ [OK]...'; };
+            studioAudio.oncanplay = () => {
                 clearTimeout(fallbackTimeout);
                 hasLoadedFile = true;
                 btnRecord.disabled = false;
                 
                 if (statusText) {
-                    statusText.textContent = `СЕМЯ ЗАГРУЖЕНО [${Math.round(promoAudio.duration)}с]`;
+                    statusText.textContent = `СЕМЯ ЗАГРУЖЕНО [${Math.round(studioAudio.duration)}с]`;
                     statusText.classList.add('text-cyber-accent');
                     statusText.classList.remove('text-cyber-muted');
                 }
             };
-            promoAudio.onerror = (err) => {
+            studioAudio.onerror = (err) => {
                 clearTimeout(fallbackTimeout);
                 console.error('Audio load error:', err);
                 hasLoadedFile = true;
@@ -296,7 +296,7 @@
                     setTimeout(() => errorModal.classList.add('opacity-100'), 50);
                 }
             };
-            promoAudio.load();
+            studioAudio.load();
         };
 
         // Aggressive MIME sniffing
@@ -343,7 +343,7 @@
         ctx.drawImage(gridCanvas, 0, 0);
         time += 0.015;
 
-        const isDormant = !hasLoadedFile || promoAudio.paused;
+        const isDormant = !hasLoadedFile || studioAudio.paused;
         const hasAnalyserData = isInitialized;
         const bufferLength = hasAnalyserData ? analyser.frequencyBinCount : 0;
         const dataArray = new Uint8Array(bufferLength || 512);
@@ -371,7 +371,7 @@
             ctx.fillStyle = 'rgba(255,255,255,0.3)';
             ctx.letterSpacing = '8px';
             ctx.shadowBlur = 0;
-            const message = (promoTextInput?.value || 'СИНДИКАТ').toUpperCase();
+            const message = (studioTextInput?.value || 'СИНДИКАТ').toUpperCase();
             ctx.fillText(message, cw/2, ch * 0.82);
         }
         
@@ -446,8 +446,8 @@
                 // Android: hot stream already built (audio was playing before captureStream call)
                 audioTracks = audioStream.getAudioTracks();
                 console.log('[Capture] Hot captureStream tracks:', audioTracks.length);
-            } else if (!isAndroid && typeof (promoAudio as any).captureStream === 'function') {
-                const capStream = (promoAudio as any).captureStream() as MediaStream;
+            } else if (!isAndroid && typeof (studioAudio as any).captureStream === 'function') {
+                const capStream = (studioAudio as any).captureStream() as MediaStream;
                 audioTracks = capStream.getAudioTracks();
                 console.log('[Capture] captureStream tracks:', audioTracks.length);
             }
@@ -528,7 +528,7 @@
     // 5. Action Triggers
     const stopRecording = () => {
         if (isRecording && mediaRecorder?.state === 'recording') {
-            promoAudio.pause();
+            studioAudio.pause();
             mediaRecorder.stop();
         }
     };
@@ -537,8 +537,8 @@
         if (!hasLoadedFile) return;
         
         try {
-            promoAudio.currentTime = 0;
-            promoAudio.onended = () => { if (isRecording) stopRecording(); };
+            studioAudio.currentTime = 0;
+            studioAudio.onended = () => { if (isRecording) stopRecording(); };
 
             if(uiLayer) { uiLayer.style.opacity = '0'; uiLayer.style.pointerEvents = 'none'; }
             if(stopLayer) {
@@ -555,7 +555,7 @@
             if (isAndroid) {
                 // ANDROID: play first so the audio stream is HOT, then captureStream
                 try {
-                    await promoAudio.play();
+                    await studioAudio.play();
                 } catch (playErr: any) {
                     console.error('Android Play Error:', playErr);
                     if (statusText) statusText.textContent = `ОШИБКА ДЕКОДЕРА: ${playErr.name || 'Failure'}`;
@@ -566,12 +566,12 @@
                 await new Promise(r => setTimeout(r, 150));
                 
                 // captureStream() now sees an active audio track
-                const hotStream = typeof (promoAudio as any).captureStream === 'function'
-                    ? (promoAudio as any).captureStream() as MediaStream
+                const hotStream = typeof (studioAudio as any).captureStream === 'function'
+                    ? (studioAudio as any).captureStream() as MediaStream
                     : undefined;
                 setupRecording(hotStream);
             } else {
-                await promoAudio.play();
+                await studioAudio.play();
                 setupRecording();
             }
 
