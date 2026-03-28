@@ -133,6 +133,7 @@
         let hasLoadedFile = false;
         let recordStartTime = 0;
         let selectedMimeType = '';
+        let keyframeTimer: any = null;
 
         // --- Palette Setup ---
         const colors = [
@@ -237,10 +238,10 @@
             for (const c of candidates) { if (MediaRecorder.isTypeSupported(c)) { mime = c; break; } }
             selectedMimeType = mime;
 
-            // Force high-quality bitrate and frequent clusters (timeslice 100ms)
+            // Force higher bitrate (5 Mbps) and keyframe frequency
             const recorderOptions: any = { 
                 mimeType: mime, 
-                videoBitsPerSecond: 1200000 
+                videoBitsPerSecond: 5000000 
             };
 
             mediaRecorder = new MediaRecorder(mixedStream, recorderOptions);
@@ -274,6 +275,7 @@
         };
 
         const executeStop = () => {
+            if (keyframeTimer) { clearInterval(keyframeTimer); keyframeTimer = null; }
             if (isRecording && mediaRecorder?.state === 'recording') {
                 studioAudio.pause();
                 mediaRecorder.stop();
@@ -330,6 +332,19 @@
                 mediaRecorder.start(100);
                 isRecording = true;
                 if(statusText) statusText.textContent = 'ЗАПИСЬ...';
+
+                // THE KEYFRAME BOMB: Force a keyframe every 2s using pause/resume hack
+                // This is the only way to make Telegram trimmer stable on most Androids
+                if (isAndroid) {
+                    keyframeTimer = setInterval(() => {
+                        if (isRecording && mediaRecorder?.state === 'recording') {
+                            mediaRecorder.pause();
+                            setTimeout(() => {
+                                if (isRecording && mediaRecorder?.state === 'paused') mediaRecorder.resume();
+                            }, 1);
+                        }
+                    }, 2000);
+                }
             } catch (err) { console.error('Record Start Fail:', err); }
         });
 
