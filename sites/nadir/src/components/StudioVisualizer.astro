@@ -103,6 +103,7 @@
 <script>
     // Howler is retained for potential future iOS debugging
     import { Howl, Howler } from 'howler';
+    import fixWebmDuration from 'fix-webm-duration';
 
     document.addEventListener('DOMContentLoaded', () => {
         const audioUpload = document.getElementById('audio-upload') as HTMLInputElement;
@@ -479,7 +480,7 @@
 
         mediaRecorder = new MediaRecorder(mixedStream, { 
             mimeType,
-            videoBitsPerSecond: 5000000
+            videoBitsPerSecond: isAndroid ? 2500000 : 5000000
         });
 
         mediaRecorder.onerror = (event) => {
@@ -493,16 +494,20 @@
 
         mediaRecorder.onstop = async () => {
             if (recordedChunks.length === 0) return;
-            recordDuration = Date.now() - recordStartTime;
+            recordDuration = performance.now() - recordStartTime;
             let blob = new Blob(recordedChunks, { type: mimeType });
             recordedChunks = [];
 
-            // Attempt to fix duration if its webm
+            // Fix duration if it's webm
             if (mimeType.includes('webm')) {
-               // Due to the complexity of EBML patching without external libs,
-               // we wrap the blob or rely on a simple metadata force if needed.
-               // Note: If Telegram still says 0:00, the user should select internal memory
-               // but the duration property in Blob is now at least internally tracked.
+                try {
+                    console.log(`[Fix] Applying duration patch: ${Math.round(recordDuration)}ms`);
+                    blob = await new Promise(resolve => {
+                        (fixWebmDuration as any)(blob, recordDuration, resolve);
+                    });
+                } catch (fixErr) {
+                    console.warn('[Fix] Patching failed, using raw blob', fixErr);
+                }
             }
 
             const url = URL.createObjectURL(blob);
@@ -578,7 +583,7 @@
 
             if (!mediaRecorder) throw new Error('MediaRecorder not initialized');
 
-            recordStartTime = Date.now();
+            recordStartTime = performance.now();
             setTimeout(() => {
                 if (mediaRecorder && mediaRecorder.state === 'inactive') {
                     mediaRecorder.start(1000); 
